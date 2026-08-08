@@ -1,0 +1,31 @@
+name: viraj_dairy
+description: "A new Flutter project for Viraj Dairy."
+publish_to: "none"
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.12.2 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  shared_preferences: ^2.3.2
+  firebase_core: ^3.0.0
+  cloud_firestore: ^5.0.0
+  camera: ^0.12.0+2
+  qr_flutter: ^4.1.0
+  pdf: ^3.10.4
+  printing: ^5.11.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/
