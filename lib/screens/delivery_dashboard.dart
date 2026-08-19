@@ -5,8 +5,14 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:upgrader/upgrader.dart';
 import '../services/database_service.dart';
 import '../services/storage_service.dart';
+
+void main() {
+  runApp(const DeliveryApp());
+}
 
 class DeliveryApp extends StatelessWidget {
   const DeliveryApp({super.key});
@@ -20,9 +26,15 @@ class DeliveryApp extends StatelessWidget {
         primarySwatch: Colors.orange,
         useMaterial3: true,
       ),
-      home: const DeliveryDashboard(
-        deliveryPartnerName: 'Demo Delivery Partner',
-        deliveryPartnerMobile: '1234567890',
+      // UpgradeAlert automatically verifies if an update exists in the store
+      home: UpgradeAlert(
+        upgrader: Upgrader(
+          durationUntilAlertAgain: const Duration(days: 1),
+        ),
+        child: const DeliveryDashboard(
+          deliveryPartnerName: 'Demo Delivery Partner',
+          deliveryPartnerMobile: '1234567890',
+        ),
       ),
     );
   }
@@ -46,13 +58,13 @@ class _DeliveryDashboardState extends State<DeliveryDashboard> with WidgetsBindi
   final DatabaseService _db = DatabaseService();
   String _activeTab = 'Orders';
 
-  // Dynamic routes list loaded from database/admin configuration
   List<Map<String, String>> _routesAssignment = [];
   String _selectedRoute = '';
   
   List<Map<String, dynamic>> _allOrders = [];
   List<Map<String, dynamic>> _customers = [];
   bool _loading = true;
+  bool _isCapturing = false;
 
   CameraController? _cameraController;
   List<CameraDescription> _cameras = [];
@@ -107,7 +119,6 @@ class _DeliveryDashboardState extends State<DeliveryDashboard> with WidgetsBindi
       final orders = await _db.getAllOrders();
       final customers = await _db.getAllCustomers();
       
-      // Extract unique routes dynamically from all customers in the database, excluding 'chinchawad' (case-insensitive)
       Set<String> uniqueRoutes = {};
       for (var cust in customers) {
         final routeName = cust['routeName']?.toString();
@@ -118,12 +129,10 @@ class _DeliveryDashboardState extends State<DeliveryDashboard> with WidgetsBindi
         }
       }
 
-      // Fallback if no routes found in customers
       if (uniqueRoutes.isEmpty) {
         uniqueRoutes = {'General Route'};
       }
 
-      // Build dynamic route assignments list ensuring all routes are included
       List<Map<String, String>> dynamicRoutes = uniqueRoutes.map((route) {
         return {
           'route': route,
@@ -137,7 +146,6 @@ class _DeliveryDashboardState extends State<DeliveryDashboard> with WidgetsBindi
         _customers = customers;
         _routesAssignment = dynamicRoutes;
         
-        // Ensure selected route defaults to the first available route if empty or invalid
         if (_routesAssignment.isNotEmpty && (_selectedRoute.isEmpty || !_routesAssignment.any((r) => r['route'] == _selectedRoute))) {
           _selectedRoute = _routesAssignment.first['route']!;
         }
@@ -165,11 +173,16 @@ class _DeliveryDashboardState extends State<DeliveryDashboard> with WidgetsBindi
   Future<void> _initController(int cameraIndex) async {
     if (_cameras.isEmpty) return;
     
+    if (cameraIndex < 0 || cameraIndex >= _cameras.length) {
+      cameraIndex = 0;
+    }
+    _selectedCameraIndex = cameraIndex;
+
     await _disposeCamera();
 
     final controller = CameraController(
-      _cameras[cameraIndex],
-      kIsWeb ? ResolutionPreset.max : ResolutionPreset.medium,
+      _cameras[_selectedCameraIndex],
+      kIsWeb ? ResolutionPreset.medium : ResolutionPreset.low,
       enableAudio: false,
       imageFormatGroup: ImageFormatGroup.jpeg,
     );
@@ -192,11 +205,13 @@ class _DeliveryDashboardState extends State<DeliveryDashboard> with WidgetsBindi
 
   Future<void> _switchCamera() async {
     if (_cameras.length < 2) return;
-    _selectedCameraIndex = (_selectedCameraIndex + 1) % _cameras.length;
-    await _initController(_selectedCameraIndex);
+    int nextIndex = (_selectedCameraIndex + 1) % _cameras.length;
+    await _initController(nextIndex);
   }
 
   Future<void> _captureAndSaveProof(Map<String, dynamic> order) async {
+    if (_isCapturing) return;
+
     if (_cameraController == null || !_cameraController!.value.isInitialized) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Camera not ready. Switching to Camera tab...')),
@@ -208,9 +223,26 @@ class _DeliveryDashboardState extends State<DeliveryDashboard> with WidgetsBindi
       return;
     }
 
+    setState(() => _isCapturing = true);
+
     try {
       final XFile picture = await _cameraController!.takePicture();
-      final Uint8List imageBytes = await picture.readAsBytes();
+      final Uint8List originalBytes = await picture.readAsBytes();
+
+      Uint8List imageBytes = originalBytes;
+      try {
+        final compressed = await FlutterImageCompress.compressWithList(
+          originalBytes,
+          minWidth: 600,
+          minHeight: 600,
+          quality: 50,
+        );
+        if (compressed.isNotEmpty) {
+          imageBytes = compressed;
+        }
+      } catch (compressError) {
+        debugPrint('Compression error, falling back to original: $compressError');
+      }
 
       final String proofUrl = await StorageService.uploadBytesDeliveryProof(
         orderId: order['id'] ?? order['orderId'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
@@ -241,6 +273,10 @@ class _DeliveryDashboardState extends State<DeliveryDashboard> with WidgetsBindi
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to capture proof: $e')),
         );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isCapturing = false);
       }
     }
   }
@@ -307,14 +343,10 @@ class _DeliveryDashboardState extends State<DeliveryDashboard> with WidgetsBindi
                           await _db.clearSession();
                           if (!mounted) return;
                           
-                          // Force navigation pop or fallback to snackbar if it's the root screen
                           if (Navigator.of(context).canPop()) {
                             Navigator.of(context).pop();
                           } else {
-                            // If it cannot pop, push a replacement or show confirmation dialog/snackbar
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Session cleared. Already at root screen.')),
-                            );
+                            // Do nothing or handle root safely without disrupting the UI view
                           }
                         },
                       ),
@@ -420,7 +452,7 @@ class _DeliveryDashboardState extends State<DeliveryDashboard> with WidgetsBindi
                                               mainAxisAlignment: MainAxisAlignment.end,
                                               children: [
                                                 ElevatedButton.icon(
-                                                  onPressed: () {
+                                                  onPressed: _isCapturing ? null : () {
                                                     setState(() {
                                                       _targetOrderForProof = order;
                                                       _activeTab = 'Camera';
@@ -483,7 +515,7 @@ class _DeliveryDashboardState extends State<DeliveryDashboard> with WidgetsBindi
                           ),
                           const SizedBox(height: 16),
                           ElevatedButton.icon(
-                            onPressed: () {
+                            onPressed: _isCapturing ? null : () {
                               if (_targetOrderForProof != null) {
                                 _captureAndSaveProof(_targetOrderForProof!);
                               } else if (routeOrders.isNotEmpty) {
@@ -494,10 +526,12 @@ class _DeliveryDashboardState extends State<DeliveryDashboard> with WidgetsBindi
                                 );
                               }
                             },
-                            icon: const Icon(Icons.camera),
-                            label: Text(_targetOrderForProof != null
-                                ? 'Capture Proof for ${_targetOrderForProof!['customerName']}'
-                                : 'Capture & Complete Order'),
+                            icon: _isCapturing ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.camera),
+                            label: Text(_isCapturing 
+                                ? 'Processing Proof...' 
+                                : (_targetOrderForProof != null
+                                    ? 'Capture Proof for ${_targetOrderForProof!['customerName']}'
+                                    : 'Capture & Complete Order')),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.orange.shade800,
                               foregroundColor: Colors.white,
@@ -507,25 +541,66 @@ class _DeliveryDashboardState extends State<DeliveryDashboard> with WidgetsBindi
                         ],
                       );
                     } else {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Delivery Partner Profile', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A))),
-                          const SizedBox(height: 12),
-                          Container(
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
-                            child: Column(
-                              children: [
-                                const CircleAvatar(radius: 35, backgroundColor: Colors.orange, child: Icon(Icons.person, size: 40, color: Colors.white)),
-                                const SizedBox(height: 12),
-                                Text(widget.deliveryPartnerName ?? 'Delivery Partner', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                                const SizedBox(height: 4),
-                                Text('Active Route: $_selectedRoute', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                              ],
+                      return SizedBox(
+                        width: double.infinity,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            const SizedBox(height: 8),
+                            const Text('Delivery Partner Profile', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A))),
+                            const SizedBox(height: 20),
+                            Container(
+                              width: double.infinity,
+                              constraints: const BoxConstraints(maxWidth: 400),
+                              padding: const EdgeInsets.all(28),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.05),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const CircleAvatar(
+                                    radius: 50,
+                                    backgroundColor: Colors.orange,
+                                    child: Icon(Icons.person, size: 60, color: Colors.white),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    widget.deliveryPartnerName ?? 'Delivery Partner',
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Colors.black87),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  if (widget.deliveryPartnerMobile != null && widget.deliveryPartnerMobile!.isNotEmpty) ...[
+                                    Text(
+                                      'Mobile: ${widget.deliveryPartnerMobile}',
+                                      style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                                    ),
+                                    const SizedBox(height: 6),
+                                  ],
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange.shade50,
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Text(
+                                      'Active Route: $_selectedRoute',
+                                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.orange.shade900),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       );
                     }
                   },

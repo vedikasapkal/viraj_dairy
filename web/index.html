@@ -1,46 +1,158 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
-  <base href="$FLUTTER_BASE_HREF">
-
-  <meta charset="UTF-8">
-  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
-
-  <!-- iOS meta tags & icons -->
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="viraj_dairy">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
-
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
-
-  <title>viraj_dairy</title>
-  <link rel="manifest" href="manifest.json">
+    <meta charset="UTF-8">
+    <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Viraj Dairy</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        html, body {
+            background-color: #0d1b2a; 
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+        /* Container ensuring absolute positioning and no layout overflow lines */
+        .splash-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 99999;
+            background-color: #0d1b2a;
+            transition: opacity 0.5s ease-out, visibility 0.5s ease-out;
+            overflow: hidden;
+        }
+        .splash-screen.hide {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+    </style>
 </head>
 <body>
-  <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
 
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
-  -->
-  <script src="flutter_bootstrap.js" async></script>
+    <!-- ================= SPLASH SCREEN ================= -->
+    <div class="splash-screen" id="splashScreen">
+        <!-- Floating Milk Drops -->
+        <div class="milk-drop drop-1"></div>
+        <div class="milk-drop drop-2"></div>
+        <div class="milk-drop drop-3"></div>
+        <div class="milk-drop drop-4"></div>
+        <div class="milk-drop drop-5"></div>
+        <div class="milk-drop drop-6"></div>
+
+        <!-- Top Milk Wave -->
+        <div class="top-wave"></div>
+
+        <!-- Main Content -->
+        <div class="content">
+            <div class="logo-section">
+                <div class="logo-icon">
+                    <div class="logo-v">V</div>
+                    <div class="logo-cow">🐄</div>
+                    <div class="logo-leaf">🌿</div>
+                    <div class="logo-milk">💧</div>
+                </div>
+                <h1>VIRAJ</h1>
+                <div class="dairy-title">DAIRY</div>
+                <div class="tagline">Freshness Delivered Daily</div>
+            </div>
+
+            <!-- Farm Scene -->
+            <div class="farm-scene">
+                <div class="sun"></div>
+                <div class="cloud cloud-1"></div>
+                <div class="cloud cloud-2"></div>
+                <div class="mountain mountain-1"></div>
+                <div class="mountain mountain-2"></div>
+                
+                <div class="farm-house">
+                    <div class="roof"></div>
+                    <div class="house-body">
+                        <div class="door"></div>
+                        <div class="window window-left"></div>
+                        <div class="window window-right"></div>
+                    </div>
+                </div>
+
+                <div class="background-cow">🐄</div>
+
+                <div class="main-cow">
+                    <div class="cow-body">
+                        <div class="cow-head">
+                            <div class="ear left-ear"></div>
+                            <div class="ear right-ear"></div>
+                            <div class="horn left-horn"></div>
+                            <div class="horn right-horn"></div>
+                            <div class="eye left-eye"></div>
+                            <div class="eye right-eye"></div>
+                            <div class="cow-nose">
+                                <span></span>
+                                <span></span>
+                            </div>
+                            <div class="cow-smile"></div>
+                        </div>
+                        <div class="cow-spot spot-1"></div>
+                        <div class="cow-spot spot-2"></div>
+                        <div class="cow-spot spot-3"></div>
+                        <div class="bell">🔔</div>
+                        <div class="tail"></div>
+                    </div>
+                </div>
+
+                <div class="milk-bottle">
+                    <div class="bottle-cap"></div>
+                    <div class="bottle-neck"></div>
+                    <div class="bottle-body">
+                        <div class="bottle-label">
+                            <strong>100%</strong>
+                            <small>Pure & Fresh</small>
+                            <span>🌿</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="milk-glass">
+                    <div class="glass-milk"></div>
+                </div>
+            </div>
+
+            <!-- Milk Wave -->
+            <div class="milk-wave">
+                <div class="wave wave-1"></div>
+                <div class="wave wave-2"></div>
+                <div class="milk-splash splash-1"></div>
+                <div class="milk-splash splash-2"></div>
+                <div class="milk-splash splash-3"></div>
+            </div>
+
+            <!-- Loading Section -->
+            <div class="loading-section">
+                <div class="loading-text">
+                    Loading<span class="loading-dots">...</span>
+                </div>
+                <div class="progress-container">
+                    <div class="progress-bar" id="progressBar"></div>
+                    <div class="progress-bubble bubble-1"></div>
+                    <div class="progress-bubble bubble-2"></div>
+                    <div class="progress-bubble bubble-3"></div>
+                </div>
+                <div class="loading-indicators">
+                    <span class="indicator active"></span>
+                    <span class="indicator"></span>
+                    <span class="indicator"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Flutter Bootstrap Script -->
+    <script src="flutter_bootstrap.js" async></script>
+    <script src="script.js"></script>
 </body>
 </html>

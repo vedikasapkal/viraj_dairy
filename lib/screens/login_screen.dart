@@ -24,6 +24,13 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
   bool _loading = false;
 
+  @override
+  void dispose() {
+    _mobileController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
   Future<void> _handleLogin() async {
     final mobile = _mobileController.text.trim();
     final password = _passwordController.text.trim();
@@ -70,88 +77,130 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: Column(children: [
-        SizedBox(
-          height: MediaQuery.of(context).size.height * 0.35,
-          width: double.infinity,
-          child: Image.asset('assets/flyer-bg.jpeg', fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(color: const Color(0xFF1E3A8A), child: const Center(child: Icon(Icons.store, color: Colors.white, size: 64)))),
-        ),
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24.0),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 400),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                  Row(children: [
-                    _buildRoleButton('admin', Icons.security, 'Admin', Colors.blue.shade700),
-                    const SizedBox(width: 8),
-                    _buildRoleButton('delivery', Icons.local_shipping, 'Delivery', Colors.orange.shade600),
-                    const SizedBox(width: 8),
-                    _buildRoleButton('customer', Icons.group, 'Customer', Colors.green.shade700),
-                  ]),
-                  const SizedBox(height: 24),
-                  TextField(
-                    controller: _mobileController,
-                    keyboardType: TextInputType.phone,
-                    decoration: InputDecoration(
-                      hintText: 'Mobile Number',
-                      prefixIcon: const Icon(Icons.phone_android, color: Colors.blue),
-                      filled: true, fillColor: Colors.grey.shade50,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
-                    ),
+      body: Column(
+        children: [
+          // Instant fallback container rendering immediately to prevent blank white space delays
+          SizedBox(
+            height: MediaQuery.of(context).size.height * 0.30,
+            width: double.infinity,
+            child: Image.asset(
+              'assets/flyer-bg.jpeg',
+              fit: BoxFit.cover,
+              frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                if (wasSynchronouslyLoaded || frame != null) {
+                  return child;
+                }
+                return Container(
+                  color: const Color(0xFF1E3A8A),
+                  child: const Center(
+                    child: Icon(Icons.store, color: Colors.white, size: 56),
                   ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _passwordController,
-                    obscureText: _obscurePassword,
-                    decoration: InputDecoration(
-                      hintText: 'Password',
-                      prefixIcon: const Icon(Icons.lock_outline, color: Colors.blue),
-                      suffixIcon: IconButton(
-                        icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: Colors.grey),
-                        onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-                      ),
-                      filled: true, fillColor: Colors.grey.shade50,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: GestureDetector(
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ForgotPasswordScreen())),
-                      child: const Text('Forgot Password?', style: TextStyle(color: Color(0xFF1E3A8A), fontWeight: FontWeight.bold, fontSize: 13)),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  ElevatedButton(
-                    onPressed: _loading ? null : _handleLogin,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _role == 'delivery' ? Colors.orange.shade600 : _role == 'admin' ? const Color(0xFF1E3A8A) : Colors.green.shade700,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: _loading
-                        ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : Text('Login as ${_role[0].toUpperCase()}${_role.substring(1)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-                  ),
-                  const SizedBox(height: 20),
-                  if (_role != 'admin')
-                    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                      const Text('New here? ', style: TextStyle(fontSize: 14)),
-                      GestureDetector(
-                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SignupScreen(initialRole: _role))),
-                        child: const Text('Create an account', style: TextStyle(color: Color(0xFF1E3A8A), fontWeight: FontWeight.bold, fontSize: 14)),
-                      ),
-                    ]),
-                ]),
+                );
+              },
+              errorBuilder: (_, __, ___) => Container(
+                color: const Color(0xFF1E3A8A),
+                child: const Center(
+                  child: Icon(Icons.store, color: Colors.white, size: 56),
+                ),
               ),
             ),
           ),
-        ),
-      ]),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 400),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          _buildRoleButton('admin', Icons.security, 'Admin', Colors.blue.shade700),
+                          const SizedBox(width: 8),
+                          _buildRoleButton('delivery', Icons.local_shipping, 'Delivery', Colors.orange.shade600),
+                          const SizedBox(width: 8),
+                          _buildRoleButton('customer', Icons.group, 'Customer', Colors.green.shade700),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      TextField(
+                        controller: _mobileController,
+                        keyboardType: TextInputType.phone,
+                        decoration: InputDecoration(
+                          hintText: 'Mobile Number',
+                          prefixIcon: const Icon(Icons.phone_android, color: Colors.blue),
+                          filled: true,
+                          fillColor: Colors.grey.shade50,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey.shade200),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: _passwordController,
+                        obscureText: _obscurePassword,
+                        decoration: InputDecoration(
+                          hintText: 'Password',
+                          prefixIcon: const Icon(Icons.lock_outline, color: Colors.blue),
+                          suffixIcon: IconButton(
+                            icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: Colors.grey),
+                            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                          ),
+                          filled: true,
+                          fillColor: Colors.grey.shade50,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey.shade200),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: GestureDetector(
+                          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ForgotPasswordScreen())),
+                          child: const Text('Forgot Password?', style: TextStyle(color: Color(0xFF1E3A8A), fontWeight: FontWeight.bold, fontSize: 13)),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: _loading ? null : _handleLogin,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _role == 'delivery'
+                              ? Colors.orange.shade600
+                              : _role == 'admin'
+                                  ? const Color(0xFF1E3A8A)
+                                  : Colors.green.shade700,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: _loading
+                            ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : Text('Login as ${_role[0].toUpperCase()}${_role.substring(1)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                      ),
+                      const SizedBox(height: 16),
+                      if (_role != 'admin')
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Text('New here? ', style: TextStyle(fontSize: 14)),
+                            GestureDetector(
+                              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SignupScreen(initialRole: _role))),
+                              child: const Text('Create an account', style: TextStyle(color: Color(0xFF1E3A8A), fontWeight: FontWeight.bold, fontSize: 14)),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -161,18 +210,21 @@ class _LoginScreenState extends State<LoginScreen> {
       child: GestureDetector(
         onTap: () => setState(() => _role = id),
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 12),
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
             color: isSelected ? activeColor : Colors.grey.shade50,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: isSelected ? activeColor : Colors.grey.shade300),
           ),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon, size: 20, color: isSelected ? Colors.white : Colors.grey.shade500),
-            const SizedBox(height: 4),
-            Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: isSelected ? Colors.white : Colors.grey.shade600)),
-          ]),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 18, color: isSelected ? Colors.white : Colors.grey.shade500),
+              const SizedBox(height: 4),
+              Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: isSelected ? Colors.white : Colors.grey.shade600)),
+            ],
+          ),
         ),
       ),
     );

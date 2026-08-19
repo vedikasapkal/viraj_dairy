@@ -1,10 +1,4 @@
-// =============================================================================
-// ORDER MODEL (lib/models/order_model.dart)
-// DatabaseService still returns/accepts List<Map<String,dynamic>> exactly as
-// before (that's the real "dataflow" your screens rely on) — this class is a
-// thin, optional typed view over the same map so screens that want type safety
-// can use OrderModel.fromMap(...) without anything else having to change.
-// =============================================================================
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class OrderModel {
   final String id;
@@ -15,6 +9,9 @@ class OrderModel {
   final String totalAmount;
   final String status;
   final String? deliveryPhoto;
+  final Timestamp? orderDate;          // Date when order was placed
+  final Timestamp? billingDueDate;     // Date when billing generates (e.g., +2 days)
+  final bool isBillingGenerated;
 
   OrderModel({
     required this.id,
@@ -25,6 +22,9 @@ class OrderModel {
     required this.totalAmount,
     required this.status,
     this.deliveryPhoto,
+    this.orderDate,
+    this.billingDueDate,
+    this.isBillingGenerated = false,
   });
 
   factory OrderModel.fromMap(Map<String, dynamic> map) {
@@ -37,6 +37,9 @@ class OrderModel {
       totalAmount: map['totalAmount'] ?? '₹0',
       status: map['status'] ?? 'Pending',
       deliveryPhoto: map['deliveryPhoto'],
+      orderDate: map['orderDate'],
+      billingDueDate: map['billingDueDate'],
+      isBillingGenerated: map['isBillingGenerated'] ?? false,
     );
   }
 
@@ -50,6 +53,9 @@ class OrderModel {
       'totalAmount': totalAmount,
       'status': status,
       'deliveryPhoto': deliveryPhoto,
+      'orderDate': orderDate,
+      'billingDueDate': billingDueDate,
+      'isBillingGenerated': isBillingGenerated,
     };
   }
 

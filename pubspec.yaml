@@ -1,3 +1,7 @@
+# =============================================================================
+# PUBSPEC.YAML (pubspec.yaml)
+# =============================================================================
+
 name: viraj_dairy
 description: "A new Flutter project for Viraj Dairy."
 publish_to: "none"
@@ -12,12 +16,15 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.8
   shared_preferences: ^2.3.2
-  firebase_core: ^3.0.0
-  cloud_firestore: ^5.0.0
+  firebase_core: ^3.6.0
+  cloud_firestore: ^5.4.4
   camera: ^0.12.0+2
   qr_flutter: ^4.1.0
   pdf: ^3.10.4
   printing: ^5.11.1
+  flutter_image_compress: ^2.3.0
+  upgrader: ^13.6.0
+  firebase_auth: ^5.7.0
 
 dev_dependencies:
   flutter_test:
@@ -26,6 +33,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+
 
   assets:
     - assets/

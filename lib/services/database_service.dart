@@ -1,5 +1,5 @@
 // =============================================================================
-// DATABASE SERVICE - UPDATED (lib/services/database_service.dart)
+// DATABASE SERVICE (lib/services/database_service.dart)
 // =============================================================================
 
 import 'dart:convert';
@@ -156,11 +156,16 @@ class DatabaseService {
   }
 
   Future<Map<String, String>?> getSession() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString('db_session');
-    if (raw == null) return null;
-    final decoded = jsonDecode(raw) as Map<String, dynamic>;
-    return decoded.map((k, v) => MapEntry(k, v.toString()));
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('db_session');
+      if (raw == null) return null;
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      return decoded.map((k, v) => MapEntry(k, v.toString()));
+    } catch (e) {
+      debugPrint('Session read error: $e');
+      return null;
+    }
   }
 
   Future<void> clearSession() async {
@@ -168,7 +173,10 @@ class DatabaseService {
     await prefs.remove('db_session');
   }
 
-  /// Wipes out local login sessions and deletes all customer and delivery users from Firestore
+  Future<void> logout() async {
+    await clearSession();
+  }
+
   Future<void> clearAllLoginAndUserMasterData() async {
     await clearSession();
 
@@ -211,7 +219,7 @@ class DatabaseService {
         'address': c['address'],
         'routeId': c['routeId'],
         'routeName': c['routeName'],
-        'lastBillGeneratedAt': c['lastBillGeneratedAt'], // Used for the "days since bill" due check
+        'lastBillGeneratedAt': c['lastBillGeneratedAt'],
         'totalBill': ordersSnap.docs.isEmpty ? null : '₹$total',
       });
     }
@@ -223,7 +231,6 @@ class DatabaseService {
     return snap.docs.map((d) => {'name': d.data()['name'], 'mobile': d.data()['mobile'], 'routeName': d.data()['routeName'] ?? ''}).toList();
   }
 
-  // Updates bill timestamp for the "days since bill" due-notification feature
   Future<void> updateCustomerBillTimestamp({required String mobile}) async {
     try {
       final querySnapshot = await _users
@@ -242,14 +249,10 @@ class DatabaseService {
     }
   }
 
-  // Deletes a customer record. Customers are stored in the shared `users`
-  // collection under the doc id `customer_<mobile>` (see _userDocId), so we
-  // delete that exact document rather than querying a separate collection.
   Future<void> deleteCustomer({required String mobile}) async {
     await _users.doc(_userDocId('customer', mobile)).delete();
   }
 
-  // Deletes a delivery boy record, stored under doc id `delivery_<mobile>`.
   Future<void> deleteDeliveryBoy({required String mobile}) async {
     await _users.doc(_userDocId('delivery', mobile)).delete();
   }
@@ -312,6 +315,7 @@ class DatabaseService {
       'status': 'Pending',
       'paymentStatus': 'Pending',
       'paymentId': null,
+      'createdAt': DateTime.now().toIso8601String(),
       'orderDate': FieldValue.serverTimestamp(),
     });
     return docRef.id;
@@ -339,8 +343,6 @@ class DatabaseService {
     await _orders.doc(orderId).update(updateData);
   }
 
-  // Marks an order's payment status (used by the customer "I Have Paid" QR flow
-  // and reflected back on the admin dashboard's payment chips).
   Future<void> updateOrderPaymentStatus({
     required dynamic orderId,
     required String paymentStatus,
@@ -351,6 +353,23 @@ class DatabaseService {
       updateData['paymentId'] = paymentId;
     }
     await _orders.doc(orderId.toString()).update(updateData);
+  }
+
+  Future<void> updateBatchPaymentStatus({
+    required List<dynamic> orderIds,
+    required String paymentStatus,
+    String? paymentId,
+  }) async {
+    final batch = _db.batch();
+    for (var id in orderIds) {
+      final docRef = _orders.doc(id.toString());
+      final Map<String, dynamic> updateData = {'paymentStatus': paymentStatus};
+      if (paymentId != null) {
+        updateData['paymentId'] = paymentId;
+      }
+      batch.update(docRef, updateData);
+    }
+    await batch.commit();
   }
 
   Future<List<Map<String, dynamic>>> getAllBanners() async {
