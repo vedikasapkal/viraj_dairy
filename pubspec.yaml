@@ -53,6 +53,7 @@ dependencies:
 
   # App upgrade notification
   upgrader: ^13.6.0
+  url_launcher: ^6.3.2
 
 
 # =============================================================================

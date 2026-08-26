@@ -19,6 +19,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/database_service.dart';
 import '../services/billing_service.dart';
@@ -189,6 +190,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
   final Set<String> _expandedBillHistory = {};
 
   // ===========================================================================
+  // DELIVERY BOY ABSENT / ROUTE NOTICE
+  // ===========================================================================
+  String? _absentSelectedRoute;
+  final TextEditingController _absentMessageController = TextEditingController(
+    text: 'Milk delivery is not available today on this route. Sorry for the inconvenience.',
+  );
+  bool _sendingAbsentMessages = false;
+
+  @override
+  void dispose() {
+    _absentMessageController.dispose();
+    super.dispose();
+  }
+
+  // ===========================================================================
   // INIT
   // ===========================================================================
 
@@ -242,6 +258,337 @@ class _AdminDashboardState extends State<AdminDashboard> {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (_) => const LoginScreen()),
+    );
+  }
+
+  // ===========================================================================
+  // DELIVERY BOY ABSENT - ROUTE SPECIFIC WHATSAPP NOTICE
+  // ===========================================================================
+
+  List<Map<String, dynamic>> _customersForAbsentRoute(String routeName) {
+    return _customers.where((customer) {
+      final customerRoute = customer['routeName']?.toString().trim() ?? '';
+      return customerRoute == routeName;
+    }).toList();
+  }
+
+  String _whatsappMobile(String mobile) {
+    var value = mobile.replaceAll(RegExp(r'[^0-9]'), '');
+    if (value.startsWith('0')) value = value.substring(1);
+    if (value.length == 10) value = '91$value';
+    return value;
+  }
+
+  Future<void> _notifyAbsentRouteCustomers() async {
+    final routeName = _absentSelectedRoute;
+    final message = _absentMessageController.text.trim();
+
+    if (routeName == null || routeName.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a route first.')),
+      );
+      return;
+    }
+
+    if (message.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter the WhatsApp message.')),
+      );
+      return;
+    }
+
+    final routeCustomers = _customersForAbsentRoute(routeName);
+
+    if (routeCustomers.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No customers are assigned to $routeName.')),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange.shade700),
+            const SizedBox(width: 8),
+            const Expanded(child: Text('Delivery Boy Absent')),
+          ],
+        ),
+        content: Text(
+          'Route: $routeName\n'
+          'Customers: ${routeCustomers.length}\n\n'
+          'WhatsApp will be opened for every customer assigned to this route only.\n\n'
+          'Message:\n$message',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.send, size: 18),
+            label: const Text('Notify Route'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _sendingAbsentMessages = true);
+
+    int opened = 0;
+    int skipped = 0;
+
+    try {
+      for (final customer in routeCustomers) {
+        if (!mounted) break;
+
+        final mobile = customer['mobile']?.toString() ?? '';
+        final phone = _whatsappMobile(mobile);
+
+        if (phone.isEmpty || phone.length < 10) {
+          skipped++;
+          continue;
+        }
+
+        final personalizedMessage =
+            'Hello ${customer['name'] ?? 'Customer'},\n\n$message';
+
+        final uri = Uri.parse(
+          'https://wa.me/$phone?text=${Uri.encodeComponent(personalizedMessage)}',
+        );
+
+        final launched = await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+
+        if (launched) {
+          opened++;
+        } else {
+          skipped++;
+        }
+
+        // Small delay so the browser/WhatsApp has time to process each launch.
+        await Future.delayed(const Duration(milliseconds: 700));
+      }
+    } catch (e) {
+      debugPrint('Route absent WhatsApp error: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _sendingAbsentMessages = false);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '$routeName notice: $opened WhatsApp chat(s) opened'
+              '${skipped > 0 ? ', $skipped skipped.' : '.'}',
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  Widget _buildAbsentRouteCustomerPreview(String routeName) {
+    final customers = _customersForAbsentRoute(routeName);
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      margin: const EdgeInsets.only(top: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.people_alt_outlined, color: Color(0xFF1E3A8A)),
+              const SizedBox(width: 8),
+              Text(
+                '$routeName Customers (${customers.length})',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (customers.isEmpty)
+            const Text(
+              'No customers assigned to this route.',
+              style: TextStyle(color: Colors.grey),
+            )
+          else
+            ...customers.take(20).map(
+              (customer) => ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: const CircleAvatar(
+                  radius: 16,
+                  child: Icon(Icons.person, size: 17),
+                ),
+                title: Text(customer['name']?.toString() ?? 'Customer'),
+                subtitle: Text(customer['mobile']?.toString() ?? ''),
+              ),
+            ),
+          if (customers.length > 20)
+            Text(
+              '+ ${customers.length - 20} more customers',
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeliveryBoyAbsentSection() {
+    final selectedRoute = _absentSelectedRoute;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.delivery_dining,
+                color: Colors.orange,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Delivery Boy Absent',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1E3A8A),
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Notify customers of one selected route only.',
+                    style: TextStyle(color: Colors.grey, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: BorderSide(color: Colors.grey.shade200),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '1. Select Route',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  value: selectedRoute,
+                  decoration: InputDecoration(
+                    labelText: 'Route with absent delivery boy',
+                    prefixIcon: const Icon(Icons.alt_route),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  items: _fixedRoutes
+                      .map(
+                        (route) => DropdownMenuItem<String>(
+                          value: route,
+                          child: Text(route),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: _sendingAbsentMessages
+                      ? null
+                      : (value) => setState(() => _absentSelectedRoute = value),
+                ),
+                if (selectedRoute != null)
+                  _buildAbsentRouteCustomerPreview(selectedRoute),
+                const SizedBox(height: 18),
+                const Text(
+                  '2. Short WhatsApp Message',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _absentMessageController,
+                  enabled: !_sendingAbsentMessages,
+                  maxLines: 4,
+                  decoration: InputDecoration(
+                    hintText: 'Example: Milk delivery is not available today...',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    alignLabelWithHint: true,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _sendingAbsentMessages
+                        ? null
+                        : _notifyAbsentRouteCustomers,
+                    icon: _sendingAbsentMessages
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.send),
+                    label: Text(
+                      _sendingAbsentMessages
+                          ? 'Opening WhatsApp...'
+                          : 'Notify Selected Route Customers',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange.shade700,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Only customers whose route exactly matches the selected route are included.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1686,8 +2033,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
   // FOOTER
   // ===========================================================================
 
-  Widget _buildFooterItem(String tabKey, IconData icon) {
-    final isActive = _activeTab == tabKey;
+  Widget _buildFooterItem(String tabKey, IconData icon, {String? displayLabel}) {
+    final isActive = _activeTab == tabKey ||
+        (tabKey == 'Delivery Boy Absent' && _activeTab == 'Absent');
+    final label = displayLabel ?? tabKey;
 
     return GestureDetector(
       onTap: () => setState(() => _activeTab = tabKey),
@@ -1701,7 +2050,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
             Icon(icon, color: isActive ? Colors.amber : Colors.white70, size: 24),
             const SizedBox(height: 3),
             Text(
-              tabKey,
+              label,
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
@@ -1832,6 +2181,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
           }),
         ],
       );
+    }
+
+    // ==========================================================================
+    // DELIVERY BOY ABSENT
+    // ==========================================================================
+    if (_activeTab == 'Delivery Boy Absent' || _activeTab == 'Absent') {
+      return _buildDeliveryBoyAbsentSection();
     }
 
     // ==========================================================================
@@ -2136,6 +2492,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
                             onTap: () => setState(() => _activeTab = 'Delivery Boys'),
                             child: _buildDashboardCard('Delivery Boys', '${_deliveryBoys.length} Active', Icons.delivery_dining, Colors.orange),
                           ),
+                          AnimatedZoomCard(
+                            index: 4,
+                            onTap: () => setState(() => _activeTab = 'Delivery Boy Absent'),
+                            child: _buildDashboardCard('Delivery Boy Absent', 'Route Notice', Icons.campaign, Colors.deepOrange),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 26),
@@ -2223,6 +2584,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   _buildFooterItem('Routes', Icons.alt_route),
                   _buildFooterItem('Orders', Icons.shopping_cart),
                   _buildFooterItem('Delivery Boys', Icons.delivery_dining),
+                  _buildFooterItem('Delivery Boy Absent', Icons.campaign, displayLabel: 'Absent'),
                 ],
               ),
             ),
