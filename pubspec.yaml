@@ -1,9 +1,11 @@
 # =============================================================================
-# PUBSPEC.YAML (pubspec.yaml)
+# PUBSPEC.YAML - VIRAJ DAIRY
 # =============================================================================
 
 name: viraj_dairy
+
 description: "A new Flutter project for Viraj Dairy."
+
 publish_to: "none"
 
 version: 1.0.0+1
@@ -11,30 +13,65 @@ version: 1.0.0+1
 environment:
   sdk: ">=3.12.2 <4.0.0"
 
+# =============================================================================
+# DEPENDENCIES
+# =============================================================================
+
 dependencies:
   flutter:
     sdk: flutter
+
+  # iOS style icons
   cupertino_icons: ^1.0.8
+
+  # Local session / login storage
   shared_preferences: ^2.3.2
+
+  # Firebase
   firebase_core: ^3.6.0
   cloud_firestore: ^5.4.4
-  camera: ^0.12.0+2
-  qr_flutter: ^4.1.0
-  pdf: ^3.10.4
-  printing: ^5.11.1
-  flutter_image_compress: ^2.3.0
-  upgrader: ^13.6.0
   firebase_auth: ^5.7.0
+
+  # Camera / delivery proof
+  camera: ^0.12.0+2
+  flutter_image_compress: ^2.3.0
+
+  # QR Code
+  qr_flutter: ^4.1.0
+
+  # PDF generation
+  pdf: ^3.10.4
+
+  # PDF preview / print / save
+  printing: ^5.11.1
+
+  # Share generated PDF
+  share_plus: ^10.1.4
+
+  # Temporary/local file handling for generated PDFs
+  path_provider: ^2.1.5
+
+  # App upgrade notification
+  upgrader: ^13.6.0
+
+
+# =============================================================================
+# DEV DEPENDENCIES
+# =============================================================================
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
   flutter_lints: ^5.0.0
+
+
+# =============================================================================
+# FLUTTER
+# =============================================================================
 
 flutter:
   uses-material-design: true
-
-
 
   assets:
     - assets/

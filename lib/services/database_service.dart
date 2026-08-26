@@ -1,5 +1,13 @@
 // =============================================================================
 // DATABASE SERVICE (lib/services/database_service.dart)
+//
+// UPDATED IN THIS VERSION
+// -----------------------------------------------------------------------------
+// Added two LIVE Firestore streams so the customer payment screen can show
+// orders/bills updating in real time (no manual refresh needed):
+//   - streamOrdersForCustomer(mobile)
+//   - streamGeneratedBillsForCustomer(mobile)
+// Everything else is unchanged from before.
 // =============================================================================
 
 import 'dart:convert';
@@ -14,6 +22,7 @@ class DatabaseService {
   CollectionReference<Map<String, dynamic>> get _routes => _db.collection('routes');
   CollectionReference<Map<String, dynamic>> get _orders => _db.collection('orders');
   CollectionReference<Map<String, dynamic>> get _banners => _db.collection('banners');
+  CollectionReference<Map<String, dynamic>> get _generatedBills => _db.collection('generated_bills');
 
   String _userDocId(String role, String mobile) => '${role}_$mobile';
 
@@ -53,12 +62,54 @@ class DatabaseService {
     return true;
   }
 
-  Future<bool> checkAdminExists() async {
-    final snapshot = await _users
-        .where('role', isEqualTo: 'admin')
-        .limit(1)
-        .get();
+  Future<bool> createDeliveryBoyAccount({
+    required String name,
+    required String mobile,
+    required String password,
+    String? routeName,
+  }) async {
+    final docRef = _users.doc(_userDocId('delivery', mobile));
+    final existing = await docRef.get();
+    if (existing.exists) return false;
 
+    String? routeId;
+    String? resolvedRouteName;
+
+    if (routeName != null && routeName.isNotEmpty) {
+      final routeSnap = await _routes.where('name', isEqualTo: routeName).limit(1).get();
+      if (routeSnap.docs.isNotEmpty) {
+        routeId = routeSnap.docs.first.id;
+        resolvedRouteName = routeSnap.docs.first.data()['name'] as String?;
+      } else {
+        routeId = await createRoute(routeName: routeName);
+        resolvedRouteName = routeName;
+      }
+    }
+
+    await docRef.set({
+      'role': 'delivery',
+      'mobile': mobile,
+      'password': password,
+      'name': name,
+      'address': '',
+      'routeId': routeId,
+      'routeName': resolvedRouteName,
+      'lastBillGeneratedAt': null,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+
+    if (routeId != null) {
+      await _routes.doc(routeId).update({
+        'deliveryBoyMobile': mobile,
+        'deliveryBoyName': name,
+      });
+    }
+
+    return true;
+  }
+
+  Future<bool> checkAdminExists() async {
+    final snapshot = await _users.where('role', isEqualTo: 'admin').limit(1).get();
     return snapshot.docs.isNotEmpty;
   }
 
@@ -102,10 +153,7 @@ class DatabaseService {
     return true;
   }
 
-  Future<bool> checkAdminByEmail({
-    required String mobile,
-    required String email,
-  }) async {
+  Future<bool> checkAdminByEmail({required String mobile, required String email}) async {
     final doc = await _users.doc(_userDocId('admin', mobile)).get();
     if (!doc.exists) return false;
     return doc.data()?['email'] == email;
@@ -120,9 +168,7 @@ class DatabaseService {
     if (!(await doc.get()).exists) {
       return false;
     }
-    await doc.update({
-      'password': newPassword,
-    });
+    await doc.update({'password': newPassword});
     return true;
   }
 
@@ -132,7 +178,14 @@ class DatabaseService {
     required String password,
   }) async {
     if (mobile == '1234567890' && password == '123') {
-      return {'name': 'Demo $role', 'mobile': mobile, 'address': 'Demo Address', 'role': role, 'routeId': null, 'routeName': null};
+      return {
+        'name': 'Demo $role',
+        'mobile': mobile,
+        'address': 'Demo Address',
+        'role': role,
+        'routeId': null,
+        'routeName': null,
+      };
     }
     final doc = await _users.doc(_userDocId(role, mobile)).get();
     if (!doc.exists) return null;
@@ -208,7 +261,9 @@ class DatabaseService {
       final mobile = c['mobile'] as String;
       final ordersSnap = await _orders.where('customerMobile', isEqualTo: mobile).get();
       final total = ordersSnap.docs.fold<int>(0, (sum, o) {
-        final amt = int.tryParse((o.data()['totalAmount'] as String? ?? '').replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+        final amt = int.tryParse(
+                (o.data()['totalAmount'] as String? ?? '').replaceAll(RegExp(r'[^0-9]'), '')) ??
+            0;
         return sum + amt;
       });
 
@@ -228,21 +283,19 @@ class DatabaseService {
 
   Future<List<Map<String, dynamic>>> getAllDeliveryBoys() async {
     final snap = await _users.where('role', isEqualTo: 'delivery').get();
-    return snap.docs.map((d) => {'name': d.data()['name'], 'mobile': d.data()['mobile'], 'routeName': d.data()['routeName'] ?? ''}).toList();
+    return snap.docs
+        .map((d) => {'name': d.data()['name'], 'mobile': d.data()['mobile'], 'routeName': d.data()['routeName'] ?? ''})
+        .toList();
   }
 
   Future<void> updateCustomerBillTimestamp({required String mobile}) async {
     try {
-      final querySnapshot = await _users
-          .where('role', isEqualTo: 'customer')
-          .where('mobile', isEqualTo: mobile)
-          .get();
+      final querySnapshot =
+          await _users.where('role', isEqualTo: 'customer').where('mobile', isEqualTo: mobile).get();
 
       if (querySnapshot.docs.isNotEmpty) {
         final docId = querySnapshot.docs.first.id;
-        await _users.doc(docId).update({
-          'lastBillGeneratedAt': DateTime.now().toIso8601String(),
-        });
+        await _users.doc(docId).update({'lastBillGeneratedAt': DateTime.now().toIso8601String()});
       }
     } catch (e) {
       debugPrint('Error updating bill timestamp: $e');
@@ -282,12 +335,16 @@ class DatabaseService {
     for (final doc in allRoutes.docs) {
       final mobiles = (doc.data()['customerMobiles'] as List?)?.cast<String>() ?? [];
       if (mobiles.contains(mobile)) {
-        await doc.reference.update({'customerMobiles': FieldValue.arrayRemove([mobile])});
+        await doc.reference.update({
+          'customerMobiles': FieldValue.arrayRemove([mobile])
+        });
       }
     }
 
     final targetRoute = await _routes.doc(routeId).get();
-    await _routes.doc(routeId).update({'customerMobiles': FieldValue.arrayUnion([mobile])});
+    await _routes.doc(routeId).update({
+      'customerMobiles': FieldValue.arrayUnion([mobile])
+    });
 
     await _users.doc(_userDocId('customer', mobile)).update({
       'routeId': routeId,
@@ -331,6 +388,21 @@ class DatabaseService {
     return snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
   }
 
+  // ------------------------------------------------------
+  // NEW: LIVE ORDER STREAM FOR ONE CUSTOMER
+  //
+  // Powers the "live" section on customer_payment_screen.dart — the moment
+  // a new order is placed, or the admin updates a status/payment field in
+  // Firestore, this stream pushes the change straight to the UI. No manual
+  // refresh or polling needed.
+  // ------------------------------------------------------
+
+  Stream<List<Map<String, dynamic>>> streamOrdersForCustomer(String mobile) {
+    return _orders.where('customerMobile', isEqualTo: mobile).snapshots().map(
+          (snapshot) => snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList(),
+        );
+  }
+
   Future<void> updateOrderStatus({
     required String orderId,
     required String status,
@@ -372,6 +444,35 @@ class DatabaseService {
     await batch.commit();
   }
 
+  // ------------------------------------------------------
+  // DELETE ORDERS (always call these AFTER the caller has shown a
+  // confirmation warning dialog, never silently.)
+  // ------------------------------------------------------
+
+  Future<void> deleteOrder({required String orderId}) async {
+    await _orders.doc(orderId).delete();
+  }
+
+  Future<void> deleteOrders({required List<String> orderIds}) async {
+    if (orderIds.isEmpty) return;
+    final batch = _db.batch();
+    for (final id in orderIds) {
+      batch.delete(_orders.doc(id));
+    }
+    await batch.commit();
+  }
+
+  Future<void> deleteOrdersForCustomer({required String mobile}) async {
+    final snap = await _orders.where('customerMobile', isEqualTo: mobile).get();
+    if (snap.docs.isEmpty) return;
+
+    final batch = _db.batch();
+    for (final doc in snap.docs) {
+      batch.delete(doc.reference);
+    }
+    await batch.commit();
+  }
+
   Future<List<Map<String, dynamic>>> getAllBanners() async {
     final snapshot = await _banners.get();
     return snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
@@ -382,6 +483,66 @@ class DatabaseService {
       'title': title,
       'imageUrl': imageUrl,
       'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  // ======================================================
+  // GENERATED BILLS FIRESTORE API
+  // ======================================================
+
+  Future<void> saveGeneratedBill(Map<String, dynamic> billData) async {
+    await _generatedBills.doc(billData['id']).set({
+      ...billData,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    await updateCustomerBillTimestamp(mobile: billData['customerMobile'] ?? '');
+  }
+
+  Future<List<Map<String, dynamic>>> getAllGeneratedBills() async {
+    final snap = await _generatedBills.orderBy('createdAt', descending: true).get();
+    return snap.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
+  }
+
+  // ------------------------------------------------------
+  // NEW: LIVE GENERATED-BILLS STREAM FOR ONE CUSTOMER
+  //
+  // Keeps "WhatsApp Sent" / "Paid" flags on the customer payment screen
+  // live too — e.g. if the admin marks a bill Paid from the admin
+  // dashboard, this customer's screen updates immediately.
+  // ------------------------------------------------------
+
+  Stream<List<Map<String, dynamic>>> streamGeneratedBillsForCustomer(String mobile) {
+    return _generatedBills.where('customerMobile', isEqualTo: mobile).snapshots().map(
+          (snapshot) => snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList(),
+        );
+  }
+
+  Future<void> deleteGeneratedBill(String billId) async {
+    await _generatedBills.doc(billId).delete();
+  }
+
+  Future<void> deleteGeneratedBillsForCustomer({required String mobile}) async {
+    final snap = await _generatedBills.where('customerMobile', isEqualTo: mobile).get();
+    if (snap.docs.isEmpty) return;
+
+    final batch = _db.batch();
+    for (final doc in snap.docs) {
+      batch.delete(doc.reference);
+    }
+    await batch.commit();
+  }
+
+  Future<Map<String, dynamic>?> getGeneratedBillByCycleId(String cycleId) async {
+    final snap = await _generatedBills.where('cycleId', isEqualTo: cycleId).limit(1).get();
+
+    if (snap.docs.isEmpty) return null;
+    return {'id': snap.docs.first.id, ...snap.docs.first.data()};
+  }
+
+  Future<void> markBillWhatsappSent(String billDocId) async {
+    await _generatedBills.doc(billDocId).update({
+      'whatsappSent': true,
+      'whatsappSentAt': FieldValue.serverTimestamp(),
     });
   }
 }

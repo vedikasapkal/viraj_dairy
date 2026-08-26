@@ -1,5 +1,14 @@
 // =============================================================================
-// LOGIN SCREEN (lib/screens/login_screen.dart)
+// LOGIN SCREEN - UPDATED (lib/screens/login_screen.dart)
+// CHANGE IN THIS VERSION:
+//   - The "New here? Create an account" signup link now shows ONLY for the
+//     Customer role. Delivery role no longer has a public signup path —
+//     those accounts must be created by the admin from the Admin Dashboard
+//     ("Delivery Boys" tab → "Add Delivery Boy").
+//   - When Delivery is selected, a short note tells the person to contact
+//     the admin instead of a signup link.
+//   - Login logic itself is unchanged: it still calls _db.loginUser(role,
+//     mobile, password) exactly as before.
 // =============================================================================
 
 import 'package:flutter/material.dart';
@@ -47,12 +56,13 @@ class _LoginScreenState extends State<LoginScreen> {
       if (profile != null) {
         await _db.saveSession(mobile: mobile, role: _role);
         if (!mounted) return;
-        _navigateToDashboard(_role);
+        _navigateToDashboard(_role, profile, mobile);
       } else {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No $_role account found for this mobile/password. Please signup first.')),
-        );
+        final message = _role == 'delivery'
+            ? 'No delivery account found for this mobile/password. Ask your admin to add you from the Admin Dashboard.'
+            : 'No $_role account found for this mobile/password. Please signup first.';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
       }
     } catch (e) {
       debugPrint('Login error: $e');
@@ -63,11 +73,25 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void _navigateToDashboard(String role) {
+  // `profile` is the user doc returned by _db.loginUser() — for a delivery
+  // account it carries the route the admin assigned them to
+  // (profile['routeName']), which we now pass straight into the delivery
+  // dashboard so it can lock to that one route instead of showing every
+  // route in the system.
+  void _navigateToDashboard(String role, Map<String, dynamic>? profile, String loginMobile) {
     if (role == 'admin') {
       Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const AdminDashboard()));
     } else if (role == 'delivery') {
-      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const DeliveryDashboard()));
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => DeliveryDashboard(
+            deliveryPartnerName: profile?['name']?.toString(),
+            deliveryPartnerMobile: profile?['mobile']?.toString() ?? loginMobile,
+            deliveryPartnerRoute: profile?['routeName']?.toString(),
+          ),
+        ),
+      );
     } else {
       Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const CustomerDashboard()));
     }
@@ -182,7 +206,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             : Text('Login as ${_role[0].toUpperCase()}${_role.substring(1)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
                       ),
                       const SizedBox(height: 16),
-                      if (_role != 'admin')
+
+                      // ---- Signup link: CUSTOMER ONLY now. ----
+                      if (_role == 'customer')
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
@@ -192,7 +218,30 @@ class _LoginScreenState extends State<LoginScreen> {
                               child: const Text('Create an account', style: TextStyle(color: Color(0xFF1E3A8A), fontWeight: FontWeight.bold, fontSize: 14)),
                             ),
                           ],
+                        )
+                      // ---- Delivery: no self-signup — admin creates the account. ----
+                      else if (_role == 'delivery')
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade50,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.orange.shade100),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.info_outline, size: 16, color: Colors.orange.shade700),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Delivery accounts are created by the admin. Contact your admin to get your mobile number and password added.',
+                                  style: TextStyle(fontSize: 12.5, color: Colors.orange.shade800),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
+                      // ---- Admin: no signup link (unchanged). ----
                     ],
                   ),
                 ),

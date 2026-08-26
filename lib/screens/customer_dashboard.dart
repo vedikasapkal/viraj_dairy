@@ -40,8 +40,6 @@ class _CustomerDashboardState extends State<CustomerDashboard>
   String _name = 'Guest Customer';
   String _address = 'Not Added';
 
-  List<Map<String, dynamic>> _pastOrders = [];
-
   List<CartItemModel> _cart = [];
 
   MenuItemModel? _selectedProduct;
@@ -107,7 +105,10 @@ class _CustomerDashboardState extends State<CustomerDashboard>
   void initState() {
     super.initState();
 
-    // Main page animation
+    // -------------------------------------------------------------------------
+    // MAIN PAGE ANIMATION
+    // -------------------------------------------------------------------------
+
     _pageAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
@@ -128,7 +129,10 @@ class _CustomerDashboardState extends State<CustomerDashboard>
       ),
     );
 
-    // Banner animation
+    // -------------------------------------------------------------------------
+    // BANNER ANIMATION
+    // -------------------------------------------------------------------------
+
     _bannerController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1300),
@@ -154,7 +158,10 @@ class _CustomerDashboardState extends State<CustomerDashboard>
       ),
     );
 
-    // Search animation
+    // -------------------------------------------------------------------------
+    // SEARCH ANIMATION
+    // -------------------------------------------------------------------------
+
     _searchController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -170,7 +177,10 @@ class _CustomerDashboardState extends State<CustomerDashboard>
       ),
     );
 
-    // Nearby/shop animation
+    // -------------------------------------------------------------------------
+    // NEARBY SHOP ANIMATION
+    // -------------------------------------------------------------------------
+
     _nearbyController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1800),
@@ -179,11 +189,17 @@ class _CustomerDashboardState extends State<CustomerDashboard>
     _nearbyScaleAnimation = TweenSequence<double>(
       [
         TweenSequenceItem(
-          tween: Tween<double>(begin: 0.96, end: 1.04),
+          tween: Tween<double>(
+            begin: 0.96,
+            end: 1.04,
+          ),
           weight: 50,
         ),
         TweenSequenceItem(
-          tween: Tween<double>(begin: 1.04, end: 0.96),
+          tween: Tween<double>(
+            begin: 1.04,
+            end: 0.96,
+          ),
           weight: 50,
         ),
       ],
@@ -197,11 +213,17 @@ class _CustomerDashboardState extends State<CustomerDashboard>
     _nearbyFloatAnimation = TweenSequence<double>(
       [
         TweenSequenceItem(
-          tween: Tween<double>(begin: 0, end: -5),
+          tween: Tween<double>(
+            begin: 0,
+            end: -5,
+          ),
           weight: 50,
         ),
         TweenSequenceItem(
-          tween: Tween<double>(begin: -5, end: 0),
+          tween: Tween<double>(
+            begin: -5,
+            end: 0,
+          ),
           weight: 50,
         ),
       ],
@@ -212,27 +234,44 @@ class _CustomerDashboardState extends State<CustomerDashboard>
       ),
     );
 
-    // Bottom nav animation
+    // -------------------------------------------------------------------------
+    // BOTTOM NAVIGATION
+    // -------------------------------------------------------------------------
+
     _navController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
 
+    // -------------------------------------------------------------------------
+    // START ANIMATIONS
+    // -------------------------------------------------------------------------
+
     _pageAnimationController.forward();
 
-    Future.delayed(const Duration(milliseconds: 150), () {
-      if (!mounted) return;
-      _bannerController.forward();
-      _searchController.forward();
-      _nearbyController.repeat();
-      _navController.forward();
-    });
+    Future.delayed(
+      const Duration(milliseconds: 150),
+      () {
+        if (!mounted) return;
+
+        _bannerController.forward();
+        _searchController.forward();
+        _nearbyController.repeat();
+        _navController.forward();
+      },
+    );
+
+    // -------------------------------------------------------------------------
+    // LOAD ONLY PROFILE
+    // -------------------------------------------------------------------------
 
     _loadProfile();
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _startBrandAutoScroll();
-    });
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) {
+        _startBrandAutoScroll();
+      },
+    );
   }
 
   // ===========================================================================
@@ -254,11 +293,19 @@ class _CustomerDashboardState extends State<CustomerDashboard>
   }
 
   // ===========================================================================
-  // PROFILE
+  // LOAD CUSTOMER PROFILE
+  //
+  // IMPORTANT:
+  // Orders are NOT loaded here.
+  // Profile section contains ONLY profile information.
   // ===========================================================================
 
   Future<void> _loadProfile() async {
-    setState(() => _loading = true);
+    if (mounted) {
+      setState(() {
+        _loading = true;
+      });
+    }
 
     try {
       final session = await _db.getSession();
@@ -276,24 +323,44 @@ class _CustomerDashboardState extends State<CustomerDashboard>
         return;
       }
 
-      _mobile = session['mobile'];
+      _mobile = session['mobile']?.toString();
+
+      if (_mobile == null || _mobile!.isEmpty) {
+        if (!mounted) return;
+
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const LoginScreen(),
+          ),
+        );
+
+        return;
+      }
+
+      // -----------------------------------------------------------------------
+      // ONLY CUSTOMER PROFILE IS FETCHED.
+      //
+      // No getOrdersForCustomer() here.
+      // -----------------------------------------------------------------------
 
       final profile = await _db.getUserProfile(
         role: 'customer',
         mobile: _mobile!,
       );
 
-      final orders = await _db.getOrdersForCustomer(_mobile!);
-
       if (!mounted) return;
 
       setState(() {
-        _name = profile?['name'] ?? 'Guest Customer';
-        _address = profile?['address'] ?? 'Not Added';
-        _pastOrders = orders;
+        _name = profile?['name']?.toString() ?? 'Guest Customer';
+
+        _address =
+            profile?['address']?.toString() ?? 'Not Added';
       });
     } catch (e) {
-      debugPrint('Customer profile load error: $e');
+      debugPrint(
+        'Customer profile load error: $e',
+      );
 
       if (!mounted) return;
 
@@ -306,7 +373,9 @@ class _CustomerDashboardState extends State<CustomerDashboard>
       );
     } finally {
       if (mounted) {
-        setState(() => _loading = false);
+        setState(() {
+          _loading = false;
+        });
       }
     }
   }
@@ -319,7 +388,9 @@ class _CustomerDashboardState extends State<CustomerDashboard>
     try {
       await _db.clearSession();
     } catch (e) {
-      debugPrint('Logout error: $e');
+      debugPrint(
+        'Logout error: $e',
+      );
     }
 
     if (!mounted) return;
@@ -337,7 +408,9 @@ class _CustomerDashboardState extends State<CustomerDashboard>
   // ===========================================================================
 
   Future<void> _handleCheckout() async {
-    if (_cart.isEmpty || _mobile == null) return;
+    if (_cart.isEmpty || _mobile == null) {
+      return;
+    }
 
     final cartItemsMapped = _cart
         .map(
@@ -355,11 +428,17 @@ class _CustomerDashboardState extends State<CustomerDashboard>
         customerName: _name,
         address: _address,
         items: cartItemsMapped,
-        totalAmount: BillingService.calculateCartTotal(_cart),
+        totalAmount:
+            BillingService.calculateCartTotal(
+          _cart,
+        ),
       );
 
-      setState(() => _cart.clear());
+      setState(() {
+        _cart.clear();
+      });
 
+      // Refresh profile only.
       await _loadProfile();
 
       if (!mounted) return;
@@ -372,7 +451,9 @@ class _CustomerDashboardState extends State<CustomerDashboard>
         ),
       );
     } catch (e) {
-      debugPrint('Checkout error: $e');
+      debugPrint(
+        'Checkout error: $e',
+      );
 
       if (!mounted) return;
 
@@ -390,9 +471,12 @@ class _CustomerDashboardState extends State<CustomerDashboard>
   // PRODUCT
   // ===========================================================================
 
-  void _openProduct(MenuItemModel product) {
+  void _openProduct(
+    MenuItemModel product,
+  ) {
     setState(() {
       _selectedProduct = product;
+
       _selectedExtras.clear();
 
       if (product.extras.isNotEmpty) {
@@ -406,16 +490,23 @@ class _CustomerDashboardState extends State<CustomerDashboard>
   }
 
   void _addToCart() {
-    if (_selectedProduct == null) return;
+    if (_selectedProduct == null) {
+      return;
+    }
 
     setState(() {
       _cart.add(
         CartItemModel(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          id: DateTime.now()
+              .millisecondsSinceEpoch
+              .toString(),
           name: _selectedProduct!.name,
           price: _selectedProduct!.price,
           img: _selectedProduct!.img,
-          chosenExtras: List.from(_selectedExtras),
+          chosenExtras:
+              List.from(
+            _selectedExtras,
+          ),
         ),
       );
 
@@ -423,18 +514,22 @@ class _CustomerDashboardState extends State<CustomerDashboard>
     });
 
     Future.delayed(
-      const Duration(milliseconds: 800),
+      const Duration(
+        milliseconds: 800,
+      ),
       () {
-        if (mounted) {
-          setState(() {
-            _selectedProduct = null;
-          });
-        }
+        if (!mounted) return;
+
+        setState(() {
+          _selectedProduct = null;
+        });
       },
     );
   }
 
-  void _removeFromCart(String id) {
+  void _removeFromCart(
+    String id,
+  ) {
     setState(() {
       _cart.removeWhere(
         (item) => item.id == id,
@@ -449,7 +544,9 @@ class _CustomerDashboardState extends State<CustomerDashboard>
   List<String> get _brandFilters {
     return menuGroups
         .where(
-          (group) => group.title.startsWith('Brand -'),
+          (group) => group.title.startsWith(
+            'Brand -',
+          ),
         )
         .map(
           (group) => group.title.replaceFirst(
@@ -462,12 +559,11 @@ class _CustomerDashboardState extends State<CustomerDashboard>
 
   // ===========================================================================
   // BRAND IMAGE
-  //
-  // Uses the first product image from each brand/group.
-  // Therefore you do NOT need a separate brand image list.
   // ===========================================================================
 
-  String? _getBrandImage(MenuGroupModel group) {
+  String? _getBrandImage(
+    MenuGroupModel group,
+  ) {
     if (group.items.isEmpty) {
       return null;
     }
@@ -502,7 +598,9 @@ class _CustomerDashboardState extends State<CustomerDashboard>
     }
 
     if (_searchTerm.trim().isNotEmpty) {
-      final term = _searchTerm.toLowerCase().trim();
+      final term = _searchTerm
+          .toLowerCase()
+          .trim();
 
       groups = groups.where(
         (group) {
@@ -532,7 +630,9 @@ class _CustomerDashboardState extends State<CustomerDashboard>
     _brandAutoScrollTimer?.cancel();
 
     _brandAutoScrollTimer = Timer.periodic(
-      const Duration(milliseconds: 45),
+      const Duration(
+        milliseconds: 45,
+      ),
       (_) {
         if (!mounted) return;
 
@@ -541,7 +641,9 @@ class _CustomerDashboardState extends State<CustomerDashboard>
         }
 
         final maxExtent =
-            _brandScrollController.position.maxScrollExtent;
+            _brandScrollController
+                .position
+                .maxScrollExtent;
 
         if (maxExtent <= 0) {
           return;
@@ -580,7 +682,13 @@ class _CustomerDashboardState extends State<CustomerDashboard>
   // NAVIGATION
   // ===========================================================================
 
-  void _handleNavTap(String tabKey) {
+  void _handleNavTap(
+    String tabKey,
+  ) {
+    // -------------------------------------------------------------------------
+    // BILLS
+    // -------------------------------------------------------------------------
+
     if (tabKey == 'bills') {
       Navigator.push(
         context,
@@ -598,6 +706,10 @@ class _CustomerDashboardState extends State<CustomerDashboard>
       return;
     }
 
+    // -------------------------------------------------------------------------
+    // OTHER TABS
+    // -------------------------------------------------------------------------
+
     setState(() {
       _activeTab = tabKey;
     });
@@ -605,12 +717,18 @@ class _CustomerDashboardState extends State<CustomerDashboard>
     _pageAnimationController.reset();
     _pageAnimationController.forward();
 
+    // -------------------------------------------------------------------------
+    // HOME ANIMATION
+    // -------------------------------------------------------------------------
+
     if (tabKey == 'home') {
       _bannerController.reset();
       _searchController.reset();
 
       Future.delayed(
-        const Duration(milliseconds: 100),
+        const Duration(
+          milliseconds: 100,
+        ),
         () {
           if (!mounted) return;
 
@@ -646,14 +764,20 @@ class _CustomerDashboardState extends State<CustomerDashboard>
     String label, {
     int badgeCount = 0,
   }) {
-    final bool isActive = _activeTab == tabKey;
+    final bool isActive =
+        _activeTab == tabKey;
 
     return GestureDetector(
-      onTap: () => _handleNavTap(tabKey),
+      onTap: () => _handleNavTap(
+        tabKey,
+      ),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 350),
+        duration: const Duration(
+          milliseconds: 350,
+        ),
         curve: Curves.easeOutBack,
-        padding: const EdgeInsets.symmetric(
+        padding:
+            const EdgeInsets.symmetric(
           horizontal: 12,
           vertical: 6,
         ),
@@ -662,34 +786,47 @@ class _CustomerDashboardState extends State<CustomerDashboard>
               ? const Color(0xFF2563EB)
                   .withOpacity(0.12)
               : Colors.transparent,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius:
+              BorderRadius.circular(
+            18,
+          ),
         ),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize:
+              MainAxisSize.min,
           children: [
             Stack(
-              clipBehavior: Clip.none,
+              clipBehavior:
+                  Clip.none,
               children: [
                 AnimatedContainer(
-                  duration: const Duration(
+                  duration:
+                      const Duration(
                     milliseconds: 300,
                   ),
-                  padding: EdgeInsets.all(
+                  padding:
+                      EdgeInsets.all(
                     isActive ? 4 : 2,
                   ),
-                  decoration: BoxDecoration(
+                  decoration:
+                      BoxDecoration(
                     color: isActive
-                        ? const Color(0xFF2563EB)
-                            .withOpacity(0.10)
+                        ? const Color(
+                            0xFF2563EB,
+                          ).withOpacity(0.10)
                         : Colors.transparent,
-                    shape: BoxShape.circle,
+                    shape:
+                        BoxShape.circle,
                   ),
                   child: Icon(
                     icon,
                     color: isActive
-                        ? const Color(0xFF2563EB)
+                        ? const Color(
+                            0xFF2563EB,
+                          )
                         : Colors.grey.shade600,
-                    size: isActive ? 26 : 24,
+                    size:
+                        isActive ? 26 : 24,
                   ),
                 ),
                 if (badgeCount > 0)
@@ -697,23 +834,31 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                     right: -5,
                     top: -5,
                     child: Container(
-                      constraints: const BoxConstraints(
+                      constraints:
+                          const BoxConstraints(
                         minWidth: 18,
                         minHeight: 18,
                       ),
                       padding:
-                          const EdgeInsets.all(3),
-                      decoration: const BoxDecoration(
+                          const EdgeInsets.all(
+                        3,
+                      ),
+                      decoration:
+                          const BoxDecoration(
                         color: Colors.red,
-                        shape: BoxShape.circle,
+                        shape:
+                            BoxShape.circle,
                       ),
                       child: Center(
                         child: Text(
                           '$badgeCount',
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style:
+                              const TextStyle(
+                            color:
+                                Colors.white,
                             fontSize: 9,
-                            fontWeight: FontWeight.bold,
+                            fontWeight:
+                                FontWeight.bold,
                           ),
                         ),
                       ),
@@ -721,7 +866,9 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                   ),
               ],
             ),
-            const SizedBox(height: 2),
+            const SizedBox(
+              height: 2,
+            ),
             Text(
               label,
               style: TextStyle(
@@ -730,7 +877,9 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                     ? FontWeight.bold
                     : FontWeight.normal,
                 color: isActive
-                    ? const Color(0xFF2563EB)
+                    ? const Color(
+                        0xFF2563EB,
+                      )
                     : Colors.grey.shade600,
               ),
             ),
@@ -741,42 +890,400 @@ class _CustomerDashboardState extends State<CustomerDashboard>
   }
 
   // ===========================================================================
-  // PROFILE ROW
+  // PROFILE INFORMATION ROW
   // ===========================================================================
 
-  Widget _buildProfileDetailRow(
-    String label,
-    String value,
-  ) {
+  Widget _buildProfileInfoCard({
+    required IconData icon,
+    required String title,
+    required String value,
+  }) {
+    return Row(
+      crossAxisAlignment:
+          CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 44,
+          height: 44,
+          decoration:
+              BoxDecoration(
+            color: const Color(
+              0xFFEFF6FF,
+            ),
+            borderRadius:
+                BorderRadius.circular(
+              13,
+            ),
+          ),
+          child: Icon(
+            icon,
+            color: const Color(
+              0xFF2563EB,
+            ),
+            size: 22,
+          ),
+        ),
+        const SizedBox(
+          width: 13,
+        ),
+        Expanded(
+          child: Column(
+            crossAxisAlignment:
+                CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style:
+                    const TextStyle(
+                  color: Colors.grey,
+                  fontSize: 11,
+                  fontWeight:
+                      FontWeight.w600,
+                ),
+              ),
+              const SizedBox(
+                height: 4,
+              ),
+              Text(
+                value.isEmpty
+                    ? 'Not Added'
+                    : value,
+                maxLines: 4,
+                overflow:
+                    TextOverflow.ellipsis,
+                style:
+                    const TextStyle(
+                  color:
+                      Color(0xFF1F2937),
+                  fontSize: 14,
+                  fontWeight:
+                      FontWeight.w800,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ===========================================================================
+  // PROFILE
+  //
+  // IMPORTANT:
+  // NO ORDERS ARE DISPLAYED HERE.
+  // ===========================================================================
+
+  Widget _buildProfile() {
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        vertical: 8,
+      padding: const EdgeInsets.only(
+        top: 18,
+        bottom: 30,
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment:
             CrossAxisAlignment.start,
         children: [
-          Expanded(
-            flex: 4,
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: Colors.grey,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
+          // -------------------------------------------------------------------
+          // PROFILE HEADER
+          // -------------------------------------------------------------------
+
+          Container(
+            width: double.infinity,
+            padding:
+                const EdgeInsets.all(
+              22,
+            ),
+            decoration:
+                BoxDecoration(
+              gradient:
+                  const LinearGradient(
+                colors: [
+                  Color(0xFF0F2F75),
+                  Color(0xFF1D4ED8),
+                  Color(0xFF2563EB),
+                ],
+                begin:
+                    Alignment.topLeft,
+                end:
+                    Alignment.bottomRight,
               ),
+              borderRadius:
+                  BorderRadius.circular(
+                24,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color:
+                      const Color(
+                    0xFF2563EB,
+                  ).withOpacity(0.25),
+                  blurRadius: 18,
+                  offset:
+                      const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 68,
+                  height: 68,
+                  decoration:
+                      BoxDecoration(
+                    color: Colors.white
+                        .withOpacity(0.16),
+                    shape:
+                        BoxShape.circle,
+                    border:
+                        Border.all(
+                      color: Colors.white
+                          .withOpacity(
+                        0.35,
+                      ),
+                      width: 2,
+                    ),
+                  ),
+                  child:
+                      const Icon(
+                    Icons
+                        .person_rounded,
+                    color:
+                        Colors.white,
+                    size: 36,
+                  ),
+                ),
+                const SizedBox(
+                  width: 15,
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment:
+                        CrossAxisAlignment
+                            .start,
+                    children: [
+                      const Text(
+                        'Customer Profile',
+                        style:
+                            TextStyle(
+                          color:
+                              Colors.white70,
+                          fontSize: 12,
+                          fontWeight:
+                              FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(
+                        height: 4,
+                      ),
+                      Text(
+                        _name,
+                        maxLines: 2,
+                        overflow:
+                            TextOverflow
+                                .ellipsis,
+                        style:
+                            const TextStyle(
+                          color:
+                              Colors.white,
+                          fontSize: 21,
+                          fontWeight:
+                              FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(
+                        height: 5,
+                      ),
+                      const Text(
+                        'Your account information',
+                        style:
+                            TextStyle(
+                          color:
+                              Colors.white70,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-          Expanded(
-            flex: 6,
-            child: Text(
-              value,
-              textAlign: TextAlign.right,
-              style: const TextStyle(
-                color: Color(0xFF1F2937),
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
+
+          const SizedBox(
+            height: 20,
+          ),
+
+          // -------------------------------------------------------------------
+          // PERSONAL INFORMATION
+          // -------------------------------------------------------------------
+
+          const Text(
+            'Personal Information',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight:
+                  FontWeight.w900,
+              color:
+                  Color(0xFF1E3A8A),
+            ),
+          ),
+
+          const SizedBox(
+            height: 10,
+          ),
+
+          Container(
+            width: double.infinity,
+            padding:
+                const EdgeInsets.all(
+              18,
+            ),
+            decoration:
+                BoxDecoration(
+              color: Colors.white,
+              borderRadius:
+                  BorderRadius.circular(
+                21,
               ),
+              border: Border.all(
+                color:
+                    Colors.grey.shade200,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black
+                      .withOpacity(
+                    0.045,
+                  ),
+                  blurRadius: 14,
+                  offset:
+                      const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                _buildProfileInfoCard(
+                  icon: Icons
+                      .person_outline_rounded,
+                  title: 'Full Name',
+                  value: _name,
+                ),
+
+                const Divider(
+                  height: 24,
+                ),
+
+                _buildProfileInfoCard(
+                  icon: Icons
+                      .phone_outlined,
+                  title: 'Mobile Number',
+                  value:
+                      _mobile ??
+                          'Not Available',
+                ),
+
+                const Divider(
+                  height: 24,
+                ),
+
+                _buildProfileInfoCard(
+                  icon: Icons
+                      .location_on_outlined,
+                  title:
+                      'Delivery Address',
+                  value: _address,
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(
+            height: 20,
+          ),
+
+          // -------------------------------------------------------------------
+          // ACCOUNT INFORMATION
+          // -------------------------------------------------------------------
+
+          Container(
+            width: double.infinity,
+            padding:
+                const EdgeInsets.all(
+              18,
+            ),
+            decoration:
+                BoxDecoration(
+              color:
+                  const Color(
+                0xFFEFF6FF,
+              ),
+              borderRadius:
+                  BorderRadius.circular(
+                20,
+              ),
+              border: Border.all(
+                color:
+                    const Color(
+                  0xFFBFDBFE,
+                ),
+              ),
+            ),
+            child: const Row(
+              crossAxisAlignment:
+                  CrossAxisAlignment
+                      .start,
+              children: [
+                Icon(
+                  Icons
+                      .verified_user_outlined,
+                  color:
+                      Color(0xFF2563EB),
+                  size: 25,
+                ),
+                SizedBox(
+                  width: 12,
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment:
+                        CrossAxisAlignment
+                            .start,
+                    children: [
+                      Text(
+                        'Customer Account',
+                        style:
+                            TextStyle(
+                          color:
+                              Color(
+                            0xFF1E3A8A,
+                          ),
+                          fontSize: 14,
+                          fontWeight:
+                              FontWeight.w900,
+                        ),
+                      ),
+                      SizedBox(
+                        height: 5,
+                      ),
+                      Text(
+                        'Your profile information is securely linked to your customer account.',
+                        style:
+                            TextStyle(
+                          color:
+                              Color(
+                            0xFF4B5563,
+                          ),
+                          fontSize: 12,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -790,68 +1297,99 @@ class _CustomerDashboardState extends State<CustomerDashboard>
 
   Widget _buildHeader() {
     return Container(
-      padding: const EdgeInsets.symmetric(
+      padding:
+          const EdgeInsets.symmetric(
         horizontal: 14,
         vertical: 10,
       ),
-      decoration: BoxDecoration(
+      decoration:
+          BoxDecoration(
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color:
+                Colors.black.withOpacity(
+              0.04,
+            ),
             blurRadius: 12,
-            offset: const Offset(0, 4),
+            offset:
+                const Offset(0, 4),
           ),
         ],
-        border: Border(
+        border:
+            Border(
           bottom: BorderSide(
-            color: Colors.grey.shade200,
+            color:
+                Colors.grey.shade200,
           ),
         ),
       ),
       child: Row(
         mainAxisAlignment:
-            MainAxisAlignment.spaceBetween,
+            MainAxisAlignment
+                .spaceBetween,
         children: [
           Row(
             children: [
               Container(
                 width: 42,
                 height: 42,
-                padding: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
+                padding:
+                    const EdgeInsets.all(
+                  2,
+                ),
+                decoration:
+                    BoxDecoration(
                   color: Colors.white,
-                  shape: BoxShape.circle,
+                  shape:
+                      BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF2563EB)
-                          .withOpacity(0.18),
+                      color:
+                          const Color(
+                        0xFF2563EB,
+                      ).withOpacity(0.18),
                       blurRadius: 10,
-                      offset: const Offset(0, 4),
+                      offset:
+                          const Offset(
+                        0,
+                        4,
+                      ),
                     ),
                   ],
                 ),
                 child: ClipOval(
                   child: Image.asset(
                     'assets/logo.jpeg',
-                    fit: BoxFit.cover,
+                    fit:
+                        BoxFit.cover,
                     errorBuilder:
-                        (_, __, ___) =>
+                        (
+                      _,
+                      __,
+                      ___,
+                    ) =>
                             const Icon(
                       Icons.store,
-                      color: Colors.blue,
+                      color:
+                          Colors.blue,
                       size: 22,
                     ),
                   ),
                 ),
               ),
-              const SizedBox(width: 9),
+              const SizedBox(
+                width: 9,
+              ),
               const Text(
                 'Viraj Dairy Menu',
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
+                style:
+                    TextStyle(
+                  fontWeight:
+                      FontWeight.w900,
                   fontSize: 16,
-                  color: Color(0xFF1E3A8A),
+                  color:
+                      Color(0xFF1E3A8A),
                 ),
               ),
             ],
@@ -859,21 +1397,27 @@ class _CustomerDashboardState extends State<CustomerDashboard>
           Row(
             children: [
               IconButton(
-                icon: const Icon(
-                  Icons.notifications_none,
-                  color: Color(0xFF1E3A8A),
+                icon:
+                    const Icon(
+                  Icons
+                      .notifications_none,
+                  color:
+                      Color(0xFF1E3A8A),
                   size: 23,
                 ),
                 onPressed: () {},
               ),
               IconButton(
-                icon: const Icon(
+                icon:
+                    const Icon(
                   Icons.exit_to_app,
-                  color: Colors.red,
+                  color:
+                      Colors.red,
                   size: 22,
                 ),
                 onPressed: _logout,
-                tooltip: 'Logout',
+                tooltip:
+                    'Logout',
               ),
             ],
           ),
@@ -888,37 +1432,53 @@ class _CustomerDashboardState extends State<CustomerDashboard>
 
   Widget _buildBanner() {
     return SlideTransition(
-      position: _bannerSlideAnimation,
+      position:
+          _bannerSlideAnimation,
       child: ScaleTransition(
-        scale: _bannerScaleAnimation,
+        scale:
+            _bannerScaleAnimation,
         child: Container(
-          width: double.infinity,
+          width:
+              double.infinity,
           height: 158,
-          margin: const EdgeInsets.fromLTRB(
+          margin:
+              const EdgeInsets.fromLTRB(
             16,
             10,
             16,
             8,
           ),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
+          decoration:
+              BoxDecoration(
+            gradient:
+                const LinearGradient(
               colors: [
                 Color(0xFF0F2F75),
                 Color(0xFF1E3A8A),
                 Color(0xFF2563EB),
               ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+              begin:
+                  Alignment.topLeft,
+              end:
+                  Alignment.bottomRight,
             ),
             borderRadius:
-                BorderRadius.circular(28),
+                BorderRadius.circular(
+              28,
+            ),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF1E3A8A)
-                    .withOpacity(0.30),
+                color:
+                    const Color(
+                  0xFF1E3A8A,
+                ).withOpacity(0.30),
                 blurRadius: 22,
                 spreadRadius: 1,
-                offset: const Offset(0, 10),
+                offset:
+                    const Offset(
+                  0,
+                  10,
+                ),
               ),
             ],
           ),
@@ -930,10 +1490,13 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                 child: Container(
                   width: 160,
                   height: 160,
-                  decoration: BoxDecoration(
-                    color: Colors.white
+                  decoration:
+                      BoxDecoration(
+                    color: Colors
+                        .white
                         .withOpacity(0.07),
-                    shape: BoxShape.circle,
+                    shape:
+                        BoxShape.circle,
                   ),
                 ),
               ),
@@ -943,50 +1506,70 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                 child: Container(
                   width: 130,
                   height: 130,
-                  decoration: BoxDecoration(
-                    color: Colors.white
+                  decoration:
+                      BoxDecoration(
+                    color: Colors
+                        .white
                         .withOpacity(0.06),
-                    shape: BoxShape.circle,
+                    shape:
+                        BoxShape.circle,
                   ),
                 ),
               ),
               Positioned.fill(
                 child: ClipRRect(
                   borderRadius:
-                      BorderRadius.circular(28),
+                      BorderRadius.circular(
+                    28,
+                  ),
                   child: Opacity(
                     opacity: 0.11,
-                    child: Image.asset(
+                    child:
+                        Image.asset(
                       'assets/logo.jpeg',
-                      fit: BoxFit.cover,
+                      fit:
+                          BoxFit.cover,
                       errorBuilder:
-                          (_, __, ___) =>
-                              const SizedBox.shrink(),
+                          (
+                        _,
+                        __,
+                        ___,
+                      ) =>
+                              const SizedBox
+                                  .shrink(),
                     ),
                   ),
                 ),
               ),
               Padding(
                 padding:
-                    const EdgeInsets.all(20),
+                    const EdgeInsets.all(
+                  20,
+                ),
                 child: Row(
                   children: [
                     Expanded(
                       child: Column(
                         mainAxisAlignment:
-                            MainAxisAlignment.center,
+                            MainAxisAlignment
+                                .center,
                         crossAxisAlignment:
-                            CrossAxisAlignment.start,
+                            CrossAxisAlignment
+                                .start,
                         children: [
                           RichText(
-                            text: TextSpan(
-                              text: 'Welcome, ',
+                            text:
+                                TextSpan(
+                              text:
+                                  'Welcome, ',
                               style:
                                   const TextStyle(
-                                fontSize: 20,
+                                fontSize:
+                                    20,
                                 fontWeight:
                                     FontWeight.w600,
-                                color: Colors.white,
+                                color:
+                                    Colors.white,
                               ),
                               children: [
                                 TextSpan(
@@ -1008,8 +1591,10 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                           ),
                           const Text(
                             'Fresh dairy & partner brands',
-                            style: TextStyle(
-                              color: Colors.white,
+                            style:
+                                TextStyle(
+                              color:
+                                  Colors.white,
                               fontSize: 13,
                               fontWeight:
                                   FontWeight.w700,
@@ -1020,8 +1605,10 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                           ),
                           const Text(
                             'Delivered fresh to your door.',
-                            style: TextStyle(
-                              color: Colors.white70,
+                            style:
+                                TextStyle(
+                              color:
+                                  Colors.white70,
                               fontSize: 12,
                             ),
                           ),
@@ -1033,22 +1620,39 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                       height: 76,
                       decoration:
                           BoxDecoration(
-                        color: Colors.white
-                            .withOpacity(0.14),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: Colors.white
-                              .withOpacity(0.20),
+                        color: Colors
+                            .white
+                            .withOpacity(
+                          0.14,
+                        ),
+                        shape:
+                            BoxShape.circle,
+                        border:
+                            Border.all(
+                          color: Colors
+                              .white
+                              .withOpacity(
+                            0.20,
+                          ),
                         ),
                       ),
                       child: ClipOval(
-                        child: Image.asset(
+                        child:
+                            Image.asset(
                           'assets/logo.jpeg',
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              const Icon(
-                            Icons.local_drink,
-                            color: Colors.white,
+                          fit:
+                              BoxFit.cover,
+                          errorBuilder:
+                              (
+                            _,
+                            __,
+                            ___,
+                          ) =>
+                                  const Icon(
+                            Icons
+                                .local_drink,
+                            color:
+                                Colors.white,
                             size: 36,
                           ),
                         ),
@@ -1070,9 +1674,11 @@ class _CustomerDashboardState extends State<CustomerDashboard>
 
   Widget _buildAnimatedSearchBar() {
     return ScaleTransition(
-      scale: _searchScaleAnimation,
+      scale:
+          _searchScaleAnimation,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(
+        padding:
+            const EdgeInsets.fromLTRB(
           16,
           4,
           16,
@@ -1084,19 +1690,32 @@ class _CustomerDashboardState extends State<CustomerDashboard>
               const EdgeInsets.symmetric(
             horizontal: 15,
           ),
-          decoration: BoxDecoration(
+          decoration:
+              BoxDecoration(
             color: Colors.white,
             borderRadius:
-                BorderRadius.circular(18),
-            border: Border.all(
-              color: const Color(0xFFDBEAFE),
+                BorderRadius.circular(
+              18,
+            ),
+            border:
+                Border.all(
+              color:
+                  const Color(
+                0xFFDBEAFE,
+              ),
             ),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF2563EB)
-                    .withOpacity(0.10),
+                color:
+                    const Color(
+                  0xFF2563EB,
+                ).withOpacity(0.10),
                 blurRadius: 15,
-                offset: const Offset(0, 6),
+                offset:
+                    const Offset(
+                  0,
+                  6,
+                ),
               ),
             ],
           ),
@@ -1104,49 +1723,70 @@ class _CustomerDashboardState extends State<CustomerDashboard>
             children: [
               Container(
                 padding:
-                    const EdgeInsets.all(7),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
-                  borderRadius:
-                      BorderRadius.circular(10),
+                    const EdgeInsets.all(
+                  7,
                 ),
-                child: const Icon(
+                decoration:
+                    BoxDecoration(
+                  color:
+                      const Color(
+                    0xFFEFF6FF,
+                  ),
+                  borderRadius:
+                      BorderRadius.circular(
+                    10,
+                  ),
+                ),
+                child:
+                    const Icon(
                   Icons.search,
-                  color: Color(0xFF2563EB),
+                  color:
+                      Color(0xFF2563EB),
                   size: 20,
                 ),
               ),
-              const SizedBox(width: 11),
+              const SizedBox(
+                width: 11,
+              ),
               Expanded(
                 child: TextField(
-                  onChanged: (value) {
+                  onChanged:
+                      (value) {
                     setState(() {
-                      _searchTerm = value;
+                      _searchTerm =
+                          value;
                     });
                   },
                   decoration:
                       const InputDecoration(
                     hintText:
                         'Search brands or products...',
-                    border: InputBorder.none,
-                    hintStyle: TextStyle(
-                      color: Colors.grey,
+                    border:
+                        InputBorder.none,
+                    hintStyle:
+                        TextStyle(
+                      color:
+                          Colors.grey,
                       fontSize: 13,
                     ),
                   ),
                 ),
               ),
-              if (_searchTerm.isNotEmpty)
+              if (_searchTerm
+                  .isNotEmpty)
                 GestureDetector(
                   onTap: () {
                     setState(() {
-                      _searchTerm = '';
+                      _searchTerm =
+                          '';
                     });
                   },
-                  child: const Icon(
+                  child:
+                      const Icon(
                     Icons.clear,
                     size: 19,
-                    color: Colors.grey,
+                    color:
+                        Colors.grey,
                   ),
                 ),
             ],
@@ -1157,13 +1797,14 @@ class _CustomerDashboardState extends State<CustomerDashboard>
   }
 
   // ===========================================================================
-  // HORIZONTAL BRAND CARDS
+  // BRAND SLIDER
   // ===========================================================================
 
   Widget _buildBrandSlider() {
     final groups = menuGroups
         .where(
-          (group) => group.items.isNotEmpty,
+          (group) =>
+              group.items.isNotEmpty,
         )
         .toList();
 
@@ -1176,7 +1817,8 @@ class _CustomerDashboardState extends State<CustomerDashboard>
           CrossAxisAlignment.start,
       children: [
         const Padding(
-          padding: EdgeInsets.fromLTRB(
+          padding:
+              EdgeInsets.fromLTRB(
             18,
             15,
             18,
@@ -1185,17 +1827,24 @@ class _CustomerDashboardState extends State<CustomerDashboard>
           child: Row(
             children: [
               Icon(
-                Icons.storefront_rounded,
-                color: Color(0xFF2563EB),
+                Icons
+                    .storefront_rounded,
+                color:
+                    Color(0xFF2563EB),
                 size: 20,
               ),
-              SizedBox(width: 7),
+              SizedBox(
+                width: 7,
+              ),
               Text(
                 'Popular Brands',
-                style: TextStyle(
+                style:
+                    TextStyle(
                   fontSize: 17,
-                  fontWeight: FontWeight.w900,
-                  color: Color(0xFF111827),
+                  fontWeight:
+                      FontWeight.w900,
+                  color:
+                      Color(0xFF111827),
                 ),
               ),
             ],
@@ -1204,36 +1853,45 @@ class _CustomerDashboardState extends State<CustomerDashboard>
         SizedBox(
           height: 118,
           child: ListView.builder(
-            controller: _brandScrollController,
-            scrollDirection: Axis.horizontal,
+            controller:
+                _brandScrollController,
+            scrollDirection:
+                Axis.horizontal,
             physics:
                 const BouncingScrollPhysics(),
             padding:
-                const EdgeInsets.symmetric(
+                const EdgeInsets
+                    .symmetric(
               horizontal: 16,
             ),
-            itemCount: groups.length,
-            itemBuilder: (context, index) {
+            itemCount:
+                groups.length,
+            itemBuilder:
+                (context, index) {
               return _AnimatedBrandCard(
-                group: groups[index],
+                group:
+                    groups[index],
                 index: index,
                 selected:
                     _selectedBrandFilter ==
                         groups[index]
                             .title
                             .replaceFirst(
-                              'Brand - ',
-                              '',
-                            ),
+                      'Brand - ',
+                      '',
+                    ),
                 image:
-                    _getBrandImage(groups[index]),
+                    _getBrandImage(
+                  groups[index],
+                ),
                 onTap: () {
-                  final brand = groups[index]
-                      .title
-                      .replaceFirst(
-                        'Brand - ',
-                        '',
-                      );
+                  final brand =
+                      groups[index]
+                          .title
+                          .replaceFirst(
+                    'Brand - ',
+                    '',
+                  );
 
                   setState(() {
                     _selectedBrandFilter =
@@ -1257,7 +1915,8 @@ class _CustomerDashboardState extends State<CustomerDashboard>
 
   Widget _buildFilterCards() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
+      padding:
+          const EdgeInsets.fromLTRB(
         16,
         10,
         16,
@@ -1273,12 +1932,15 @@ class _CustomerDashboardState extends State<CustomerDashboard>
           children: [
             _AnimatedFilterCard(
               label: 'All Items',
-              icon: Icons.apps_rounded,
+              icon:
+                  Icons.apps_rounded,
               selected:
-                  _selectedBrandFilter == null,
+                  _selectedBrandFilter ==
+                      null,
               onTap: () {
                 setState(() {
-                  _selectedBrandFilter = null;
+                  _selectedBrandFilter =
+                      null;
                 });
               },
             ),
@@ -1286,7 +1948,8 @@ class _CustomerDashboardState extends State<CustomerDashboard>
               (brand) {
                 return _AnimatedFilterCard(
                   label: brand,
-                  icon: Icons.local_mall_rounded,
+                  icon: Icons
+                      .local_mall_rounded,
                   selected:
                       _selectedBrandFilter ==
                           brand,
@@ -1315,7 +1978,8 @@ class _CustomerDashboardState extends State<CustomerDashboard>
   Widget _buildProductGroups() {
     if (_filteredBrandGroups.isEmpty) {
       return const Padding(
-        padding: EdgeInsets.symmetric(
+        padding:
+            EdgeInsets.symmetric(
           vertical: 70,
         ),
         child: Center(
@@ -1326,11 +1990,15 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                 color: Colors.grey,
                 size: 45,
               ),
-              SizedBox(height: 10),
+              SizedBox(
+                height: 10,
+              ),
               Text(
                 'No products match your filter.',
-                style: TextStyle(
-                  color: Colors.grey,
+                style:
+                    TextStyle(
+                  color:
+                      Colors.grey,
                   fontSize: 14,
                 ),
               ),
@@ -1344,12 +2012,15 @@ class _CustomerDashboardState extends State<CustomerDashboard>
       crossAxisAlignment:
           CrossAxisAlignment.start,
       children: [
-        for (int groupIndex = 0;
-            groupIndex <
-                _filteredBrandGroups.length;
-            groupIndex++) ...[
+        for (
+          int groupIndex = 0;
+          groupIndex <
+              _filteredBrandGroups.length;
+          groupIndex++
+        ) ...[
           Padding(
-            padding: const EdgeInsets.fromLTRB(
+            padding:
+                const EdgeInsets.fromLTRB(
               4,
               13,
               4,
@@ -1360,20 +2031,28 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                 Container(
                   width: 5,
                   height: 22,
-                  decoration: BoxDecoration(
+                  decoration:
+                      BoxDecoration(
                     color:
-                        const Color(0xFF2563EB),
+                        const Color(
+                      0xFF2563EB,
+                    ),
                     borderRadius:
-                        BorderRadius.circular(8),
+                        BorderRadius.circular(
+                      8,
+                    ),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(
+                  width: 8,
+                ),
                 Expanded(
                   child: Text(
                     _filteredBrandGroups[
                             groupIndex]
                         .title,
-                    style: const TextStyle(
+                    style:
+                        const TextStyle(
                       fontSize: 17,
                       fontWeight:
                           FontWeight.w900,
@@ -1384,8 +2063,10 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                 ),
                 Text(
                   '${_filteredBrandGroups[groupIndex].items.length} items',
-                  style: const TextStyle(
-                    color: Colors.grey,
+                  style:
+                      const TextStyle(
+                    color:
+                        Colors.grey,
                     fontSize: 11,
                     fontWeight:
                         FontWeight.w600,
@@ -1416,12 +2097,15 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                 _filteredBrandGroups[
                         groupIndex]
                     .items[index],
-                index: index +
-                    groupIndex,
+                index:
+                    index +
+                        groupIndex,
               );
             },
           ),
-          const SizedBox(height: 10),
+          const SizedBox(
+            height: 10,
+          ),
         ],
       ],
     );
@@ -1433,45 +2117,66 @@ class _CustomerDashboardState extends State<CustomerDashboard>
 
   Widget _buildNearbyShopCard() {
     return AnimatedBuilder(
-      animation: _nearbyController,
-      builder: (context, child) {
+      animation:
+          _nearbyController,
+      builder:
+          (context, child) {
         return Transform.translate(
           offset: Offset(
             0,
-            _nearbyFloatAnimation.value,
+            _nearbyFloatAnimation
+                .value,
           ),
           child: Transform.scale(
-            scale: _nearbyScaleAnimation.value,
+            scale:
+                _nearbyScaleAnimation
+                    .value,
             child: child,
           ),
         );
       },
       child: Container(
-        margin: const EdgeInsets.fromLTRB(
+        margin:
+            const EdgeInsets.fromLTRB(
           0,
           18,
           0,
           20,
         ),
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
+        padding:
+            const EdgeInsets.all(
+          20,
+        ),
+        decoration:
+            BoxDecoration(
+          gradient:
+              const LinearGradient(
             colors: [
               Color(0xFF0F2F75),
               Color(0xFF1D4ED8),
               Color(0xFF2563EB),
             ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+            begin:
+                Alignment.topLeft,
+            end:
+                Alignment.bottomRight,
           ),
           borderRadius:
-              BorderRadius.circular(25),
+              BorderRadius.circular(
+            25,
+          ),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF1D4ED8)
-                  .withOpacity(0.30),
+              color:
+                  const Color(
+                0xFF1D4ED8,
+              ).withOpacity(0.30),
               blurRadius: 20,
-              offset: const Offset(0, 10),
+              offset:
+                  const Offset(
+                0,
+                10,
+              ),
             ),
           ],
         ),
@@ -1483,10 +2188,13 @@ class _CustomerDashboardState extends State<CustomerDashboard>
               child: Container(
                 width: 100,
                 height: 100,
-                decoration: BoxDecoration(
-                  color: Colors.white
+                decoration:
+                    BoxDecoration(
+                  color: Colors
+                      .white
                       .withOpacity(0.07),
-                  shape: BoxShape.circle,
+                  shape:
+                      BoxShape.circle,
                 ),
               ),
             ),
@@ -1499,38 +2207,55 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                       height: 52,
                       decoration:
                           BoxDecoration(
-                        color: Colors.white
-                            .withOpacity(0.15),
-                        shape: BoxShape.circle,
+                        color: Colors
+                            .white
+                            .withOpacity(
+                          0.15,
+                        ),
+                        shape:
+                            BoxShape.circle,
                       ),
-                      child: const Icon(
-                        Icons.location_on_rounded,
-                        color: Colors.white,
+                      child:
+                          const Icon(
+                        Icons
+                            .location_on_rounded,
+                        color:
+                            Colors.white,
                         size: 29,
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(
+                      width: 12,
+                    ),
                     const Expanded(
                       child: Column(
                         crossAxisAlignment:
-                            CrossAxisAlignment.start,
+                            CrossAxisAlignment
+                                .start,
                         children: [
                           Text(
                             'Nearby Store',
-                            style: TextStyle(
+                            style:
+                                TextStyle(
                               color:
                                   Colors.white70,
-                              fontSize: 12,
+                              fontSize:
+                                  12,
                               fontWeight:
                                   FontWeight.w600,
                             ),
                           ),
-                          SizedBox(height: 2),
+                          SizedBox(
+                            height: 2,
+                          ),
                           Text(
                             'Visit Our Shop',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 19,
+                            style:
+                                TextStyle(
+                              color:
+                                  Colors.white,
+                              fontSize:
+                                  19,
                               fontWeight:
                                   FontWeight.w900,
                             ),
@@ -1547,27 +2272,36 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                       ),
                       decoration:
                           BoxDecoration(
-                        color: Colors.green
-                            .withOpacity(0.90),
+                        color: Colors
+                            .green
+                            .withOpacity(
+                          0.90,
+                        ),
                         borderRadius:
                             BorderRadius.circular(
                           20,
                         ),
                       ),
-                      child: const Row(
+                      child:
+                          const Row(
                         children: [
                           Icon(
                             Icons.circle,
                             size: 7,
-                            color: Colors.white,
+                            color:
+                                Colors.white,
                           ),
-                          SizedBox(width: 5),
+                          SizedBox(
+                            width: 5,
+                          ),
                           Text(
                             'OPEN',
-                            style: TextStyle(
+                            style:
+                                TextStyle(
                               color:
                                   Colors.white,
-                              fontSize: 10,
+                              fontSize:
+                                  10,
                               fontWeight:
                                   FontWeight.w900,
                             ),
@@ -1577,48 +2311,78 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                     ),
                   ],
                 ),
-                const SizedBox(height: 17),
+                const SizedBox(
+                  height: 17,
+                ),
                 Container(
-                  width: double.infinity,
+                  width:
+                      double.infinity,
                   padding:
-                      const EdgeInsets.all(13),
-                  decoration: BoxDecoration(
-                    color: Colors.white
-                        .withOpacity(0.10),
+                      const EdgeInsets.all(
+                    13,
+                  ),
+                  decoration:
+                      BoxDecoration(
+                    color: Colors
+                        .white
+                        .withOpacity(
+                      0.10,
+                    ),
                     borderRadius:
-                        BorderRadius.circular(15),
-                    border: Border.all(
-                      color: Colors.white
-                          .withOpacity(0.10),
+                        BorderRadius.circular(
+                      15,
+                    ),
+                    border:
+                        Border.all(
+                      color: Colors
+                          .white
+                          .withOpacity(
+                        0.10,
+                      ),
                     ),
                   ),
-                  child: const Column(
+                  child:
+                      const Column(
                     children: [
                       Text(
                         'Viraj Dairy, Kunal Icon',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
+                        style:
+                            TextStyle(
+                          color:
+                              Colors.white,
+                          fontSize:
+                              14,
                           fontWeight:
                               FontWeight.w800,
                         ),
                       ),
-                      SizedBox(height: 4),
+                      SizedBox(
+                        height: 4,
+                      ),
                       Text(
                         'Pimple Saudagar, Pune - 411027',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
+                        style:
+                            TextStyle(
+                          color:
+                              Colors.white70,
+                          fontSize:
+                              12,
                         ),
                         textAlign:
-                            TextAlign.center,
+                            TextAlign
+                                .center,
                       ),
-                      SizedBox(height: 8),
+                      SizedBox(
+                        height: 8,
+                      ),
                       Text(
                         '📞 9850921154',
-                        style: TextStyle(
-                          color: Colors.amber,
-                          fontSize: 14,
+                        style:
+                            TextStyle(
+                          color:
+                              Colors.amber,
+                          fontSize:
+                              14,
                           fontWeight:
                               FontWeight.w900,
                         ),
@@ -1662,10 +2426,14 @@ class _CustomerDashboardState extends State<CustomerDashboard>
       crossAxisAlignment:
           CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 12),
+        const SizedBox(
+          height: 12,
+        ),
         _buildAnimatedSearchBar(),
         _buildFilterCards(),
-        const SizedBox(height: 8),
+        const SizedBox(
+          height: 8,
+        ),
         _buildProductGroups(),
       ],
     );
@@ -1678,22 +2446,29 @@ class _CustomerDashboardState extends State<CustomerDashboard>
   Widget _buildCart() {
     if (_cart.isEmpty) {
       return const Padding(
-        padding: EdgeInsets.only(
+        padding:
+            EdgeInsets.only(
           top: 90,
         ),
         child: Center(
           child: Column(
             children: [
               Icon(
-                Icons.shopping_cart_outlined,
-                color: Colors.grey,
+                Icons
+                    .shopping_cart_outlined,
+                color:
+                    Colors.grey,
                 size: 58,
               ),
-              SizedBox(height: 12),
+              SizedBox(
+                height: 12,
+              ),
               Text(
                 'Your cart is empty.',
-                style: TextStyle(
-                  color: Colors.grey,
+                style:
+                    TextStyle(
+                  color:
+                      Colors.grey,
                   fontSize: 14,
                 ),
               ),
@@ -1705,9 +2480,11 @@ class _CustomerDashboardState extends State<CustomerDashboard>
 
     return Column(
       children: [
-        for (int i = 0;
-            i < _cart.length;
-            i++)
+        for (
+          int i = 0;
+          i < _cart.length;
+          i++
+        )
           _AnimatedCartCard(
             item: _cart[i],
             index: i,
@@ -1717,34 +2494,57 @@ class _CustomerDashboardState extends State<CustomerDashboard>
               );
             },
           ),
-        const SizedBox(height: 12),
+
+        const SizedBox(
+          height: 12,
+        ),
+
+        // ---------------------------------------------------------------------
+        // TOTAL
+        // ---------------------------------------------------------------------
+
         Container(
           padding:
-              const EdgeInsets.all(17),
-          decoration: BoxDecoration(
-            color: Colors.white,
+              const EdgeInsets.all(
+            17,
+          ),
+          decoration:
+              BoxDecoration(
+            color:
+                Colors.white,
             borderRadius:
-                BorderRadius.circular(18),
-            border: Border.all(
-              color: Colors.grey.shade200,
+                BorderRadius.circular(
+              18,
+            ),
+            border:
+                Border.all(
+              color:
+                  Colors.grey.shade200,
             ),
             boxShadow: [
               BoxShadow(
                 color: Colors.black
-                    .withOpacity(0.04),
+                    .withOpacity(
+                  0.04,
+                ),
                 blurRadius: 10,
                 offset:
-                    const Offset(0, 5),
+                    const Offset(
+                  0,
+                  5,
+                ),
               ),
             ],
           ),
           child: Row(
             mainAxisAlignment:
-                MainAxisAlignment.spaceBetween,
+                MainAxisAlignment
+                    .spaceBetween,
             children: [
               const Text(
                 'Total Amount:',
-                style: TextStyle(
+                style:
+                    TextStyle(
                   fontWeight:
                       FontWeight.bold,
                   fontSize: 15,
@@ -1752,7 +2552,8 @@ class _CustomerDashboardState extends State<CustomerDashboard>
               ),
               Text(
                 '₹${BillingService.calculateCartTotal(_cart)}',
-                style: const TextStyle(
+                style:
+                    const TextStyle(
                   fontWeight:
                       FontWeight.w900,
                   fontSize: 19,
@@ -1763,19 +2564,32 @@ class _CustomerDashboardState extends State<CustomerDashboard>
             ],
           ),
         ),
-        const SizedBox(height: 16),
+
+        const SizedBox(
+          height: 16,
+        ),
+
+        // ---------------------------------------------------------------------
+        // CHECKOUT
+        // ---------------------------------------------------------------------
+
         SizedBox(
-          width: double.infinity,
+          width:
+              double.infinity,
           height: 52,
-          child: ElevatedButton(
+          child:
+              ElevatedButton(
             style:
                 ElevatedButton.styleFrom(
               elevation: 5,
               shadowColor:
-                  const Color(0xFF2563EB)
-                      .withOpacity(0.35),
+                  const Color(
+                0xFF2563EB,
+              ).withOpacity(0.35),
               backgroundColor:
-                  const Color(0xFF2563EB),
+                  const Color(
+                0xFF2563EB,
+              ),
               shape:
                   RoundedRectangleBorder(
                 borderRadius:
@@ -1786,147 +2600,21 @@ class _CustomerDashboardState extends State<CustomerDashboard>
             ),
             onPressed:
                 _handleCheckout,
-            child: const Text(
+            child:
+                const Text(
               'Proceed to Checkout',
-              style: TextStyle(
-                color: Colors.white,
+              style:
+                  TextStyle(
+                color:
+                    Colors.white,
                 fontWeight:
                     FontWeight.bold,
-                fontSize: 15,
+                fontSize:
+                    15,
               ),
             ),
           ),
         ),
-      ],
-    );
-  }
-
-  // ===========================================================================
-  // PROFILE
-  // ===========================================================================
-
-  Widget _buildProfile() {
-    return Column(
-      crossAxisAlignment:
-          CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding:
-              const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius:
-                BorderRadius.circular(21),
-            border: Border.all(
-              color: Colors.grey.shade200,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black
-                    .withOpacity(0.04),
-                blurRadius: 14,
-                offset:
-                    const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration:
-                        const BoxDecoration(
-                      color:
-                          Color(0xFFEFF6FF),
-                      shape:
-                          BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.person_rounded,
-                      color:
-                          Color(0xFF2563EB),
-                      size: 26,
-                    ),
-                  ),
-                  const SizedBox(
-                    width: 12,
-                  ),
-                  const Text(
-                    'Customer Profile',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight:
-                          FontWeight.bold,
-                      color:
-                          Color(0xFF1E3A8A),
-                    ),
-                  ),
-                ],
-              ),
-              const Divider(
-                height: 28,
-              ),
-              _buildProfileDetailRow(
-                'Name',
-                _name,
-              ),
-              _buildProfileDetailRow(
-                'Mobile Number',
-                _mobile ?? 'N/A',
-              ),
-              _buildProfileDetailRow(
-                'Delivery Address',
-                _address,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 22),
-        const Text(
-          'Past Orders',
-          style: TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF1E3A8A),
-          ),
-        ),
-        const SizedBox(height: 10),
-        _pastOrders.isEmpty
-            ? const Padding(
-                padding:
-                    EdgeInsets.symmetric(
-                  vertical: 35,
-                ),
-                child: Center(
-                  child: Text(
-                    'No past orders found.',
-                    style: TextStyle(
-                      color: Colors.grey,
-                    ),
-                  ),
-                ),
-              )
-            : Column(
-                children:
-                    List.generate(
-                  _pastOrders.length,
-                  (index) {
-                    final order =
-                        _pastOrders[
-                            index];
-
-                    return _AnimatedOrderCard(
-                      order: order,
-                      index: index,
-                    );
-                  },
-                ),
-              ),
       ],
     );
   }
@@ -1942,8 +2630,10 @@ class _CustomerDashboardState extends State<CustomerDashboard>
 
     return Positioned.fill(
       child: Material(
-        color: Colors.black
-            .withOpacity(0.58),
+        color:
+            Colors.black.withOpacity(
+          0.58,
+        ),
         child: Center(
           child: TweenAnimationBuilder<
               double>(
@@ -1958,43 +2648,49 @@ class _CustomerDashboardState extends State<CustomerDashboard>
             curve:
                 Curves.easeOutBack,
             builder:
-                (context, value, child) {
+                (
+              context,
+              value,
+              child,
+            ) {
               return Transform.scale(
                 scale: value,
                 child: child,
               );
             },
-            child: ConstrainedBox(
+            child:
+                ConstrainedBox(
               constraints:
                   BoxConstraints(
                 maxWidth:
                     MediaQuery.of(
-                            context)
-                        .size
-                        .width *
-                    0.91,
+                          context,
+                        ).size.width *
+                        0.91,
                 maxHeight:
                     MediaQuery.of(
-                            context)
-                        .size
-                        .height *
-                    0.86,
+                          context,
+                        ).size.height *
+                        0.86,
               ),
-              child: Container(
+              child:
+                  Container(
                 padding:
                     const EdgeInsets.all(
                   20,
                 ),
                 decoration:
                     BoxDecoration(
-                  color: Colors.white,
+                  color:
+                      Colors.white,
                   borderRadius:
                       BorderRadius.circular(
                     25,
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black
+                      color: Colors
+                          .black
                           .withOpacity(
                         0.30,
                       ),
@@ -2007,7 +2703,8 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                     ),
                   ],
                 ),
-                child: Column(
+                child:
+                    Column(
                   crossAxisAlignment:
                       CrossAxisAlignment
                           .start,
@@ -2017,12 +2714,14 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                     Row(
                       children: [
                         Expanded(
-                          child: Text(
+                          child:
+                              Text(
                             _selectedProduct!
                                 .name,
                             style:
                                 const TextStyle(
-                              fontSize: 18,
+                              fontSize:
+                                  18,
                               fontWeight:
                                   FontWeight
                                       .bold,
@@ -2038,32 +2737,40 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                               const Icon(
                             Icons.close,
                           ),
-                          onPressed: () {
-                            setState(() {
-                              _selectedProduct =
-                                  null;
-                            });
+                          onPressed:
+                              () {
+                            setState(
+                              () {
+                                _selectedProduct =
+                                    null;
+                              },
+                            );
                           },
                         ),
                       ],
                     ),
+
                     const SizedBox(
                       height: 8,
                     ),
+
                     _AnimatedDialogImage(
                       image:
                           _selectedProduct!
                               .img,
                     ),
+
                     const SizedBox(
                       height: 12,
                     ),
+
                     Text(
                       _selectedProduct!
                           .price,
                       style:
                           const TextStyle(
-                        fontSize: 17,
+                        fontSize:
+                            17,
                         fontWeight:
                             FontWeight
                                 .w900,
@@ -2073,24 +2780,31 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                         ),
                       ),
                     ),
+
                     const SizedBox(
                       height: 15,
                     ),
+
                     const Text(
                       'Select Pack Size / Quantity Option:',
-                      style: TextStyle(
-                        fontSize: 14,
+                      style:
+                          TextStyle(
+                        fontSize:
+                            14,
                         fontWeight:
-                            FontWeight.bold,
+                            FontWeight
+                                .bold,
                         color:
                             Color(
                           0xFF1F2937,
                         ),
                       ),
                     ),
+
                     const SizedBox(
                       height: 8,
                     ),
+
                     Container(
                       padding:
                           const EdgeInsets
@@ -2113,7 +2827,8 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                         'ℹ️ Choose your preferred size or packet volume below.',
                         style:
                             TextStyle(
-                          fontSize: 11,
+                          fontSize:
+                              11,
                           fontWeight:
                               FontWeight
                                   .w600,
@@ -2124,9 +2839,11 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                         ),
                       ),
                     ),
+
                     const SizedBox(
                       height: 8,
                     ),
+
                     Flexible(
                       child: _selectedProduct!
                               .extras
@@ -2145,9 +2862,10 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                           : ListView(
                               shrinkWrap:
                                   true,
-                              children: _selectedProduct!
-                                  .extras
-                                  .map(
+                              children:
+                                  _selectedProduct!
+                                      .extras
+                                      .map(
                                 (
                                   extraOption,
                                 ) {
@@ -2176,11 +2894,14 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                                       ),
                                       child:
                                           const Icon(
-                                        Icons.local_mall,
+                                        Icons
+                                            .local_mall,
                                         size:
                                             20,
                                         color:
-                                            Color(0xFF2563EB),
+                                            Color(
+                                          0xFF2563EB,
+                                        ),
                                       ),
                                     ),
                                     title:
@@ -2212,13 +2933,16 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                                       0xFF2563EB,
                                     ),
                                     onChanged:
-                                        (checked) {
+                                        (
+                                      checked,
+                                    ) {
                                       setState(
                                         () {
                                           if (checked ==
                                               true) {
                                             _selectedExtras
                                                 .clear();
+
                                             _selectedExtras
                                                 .add(
                                               extraOption,
@@ -2237,9 +2961,11 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                               ).toList(),
                             ),
                     ),
+
                     const SizedBox(
                       height: 12,
                     ),
+
                     SizedBox(
                       width:
                           double.infinity,
@@ -2249,7 +2975,8 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                         style:
                             ElevatedButton
                                 .styleFrom(
-                          elevation: 5,
+                          elevation:
+                              5,
                           backgroundColor:
                               _justAdded
                                   ? Colors
@@ -2268,7 +2995,8 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                         ),
                         onPressed:
                             _addToCart,
-                        child: Text(
+                        child:
+                            Text(
                           _justAdded
                               ? 'Added to Cart! ✓'
                               : 'Add to Cart',
@@ -2300,7 +3028,9 @@ class _CustomerDashboardState extends State<CustomerDashboard>
   // ===========================================================================
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+    BuildContext context,
+  ) {
     if (_loading) {
       return const Scaffold(
         body: Center(
@@ -2315,9 +3045,11 @@ class _CustomerDashboardState extends State<CustomerDashboard>
           const Color(0xFFF8FAFC),
       body: SafeArea(
         child: FadeTransition(
-          opacity: _fadeAnimation,
+          opacity:
+              _fadeAnimation,
           child: ScaleTransition(
-            scale: _scaleAnimation,
+            scale:
+                _scaleAnimation,
             child: Stack(
               children: [
                 Column(
@@ -2337,7 +3069,8 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                         ),
                         physics:
                             const BouncingScrollPhysics(),
-                        child: Column(
+                        child:
+                            Column(
                           crossAxisAlignment:
                               CrossAxisAlignment
                                   .start,
@@ -2361,24 +3094,33 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                   ],
                 ),
 
-                // Product popup
+                // -----------------------------------------------------------------
+                // PRODUCT POPUP
+                // -----------------------------------------------------------------
+
                 if (_selectedProduct !=
                     null)
                   _buildProductDialog(),
 
-                // Bottom Navigation
+                // -----------------------------------------------------------------
+                // BOTTOM NAVIGATION
+                // -----------------------------------------------------------------
+
                 Positioned(
                   left: 0,
                   right: 0,
                   bottom: 0,
-                  child: SlideTransition(
-                    position: Tween<Offset>(
+                  child:
+                      SlideTransition(
+                    position:
+                        Tween<Offset>(
                       begin:
                           const Offset(
                         0,
                         1,
                       ),
-                      end: Offset.zero,
+                      end:
+                          Offset.zero,
                     ).animate(
                       CurvedAnimation(
                         parent:
@@ -2387,7 +3129,8 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                             Curves.easeOutBack,
                       ),
                     ),
-                    child: Container(
+                    child:
+                        Container(
                       padding:
                           const EdgeInsets
                               .symmetric(
@@ -2396,7 +3139,8 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                       ),
                       decoration:
                           BoxDecoration(
-                        color: Colors.white,
+                        color:
+                            Colors.white,
                         boxShadow: [
                           BoxShadow(
                             color: Colors
@@ -2404,7 +3148,8 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                                 .withOpacity(
                               0.09,
                             ),
-                            blurRadius: 18,
+                            blurRadius:
+                                18,
                             offset:
                                 const Offset(
                               0,
@@ -2414,14 +3159,16 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                         ],
                         border:
                             Border(
-                          top: BorderSide(
+                          top:
+                              BorderSide(
                             color: Colors
                                 .grey
                                 .shade200,
                           ),
                         ),
                       ),
-                      child: Row(
+                      child:
+                          Row(
                         mainAxisAlignment:
                             MainAxisAlignment
                                 .spaceAround,
@@ -2444,7 +3191,8 @@ class _CustomerDashboardState extends State<CustomerDashboard>
                                 .shopping_cart_rounded,
                             'Cart',
                             badgeCount:
-                                _cart.length,
+                                _cart
+                                    .length,
                           ),
                           _buildNavItem(
                             'bills',
@@ -2474,18 +3222,10 @@ class _CustomerDashboardState extends State<CustomerDashboard>
 
 // =============================================================================
 // ANIMATED PRODUCT CARD
-//
-// BEHAVIOR:
-// - NO continuous animation.
-// - Card stays completely still normally.
-// - On hover/touch:
-//     * card slightly zooms
-//     * card slightly lifts
-//     * ONLY product image smoothly zooms in/out
-// - When mouse leaves, everything returns to normal.
 // =============================================================================
 
-class _AnimatedHoverZoomTiltCard extends StatefulWidget {
+class _AnimatedHoverZoomTiltCard
+    extends StatefulWidget {
   final MenuItemModel product;
   final int index;
   final VoidCallback onTap;
@@ -2497,19 +3237,28 @@ class _AnimatedHoverZoomTiltCard extends StatefulWidget {
   });
 
   @override
-  State<_AnimatedHoverZoomTiltCard> createState() =>
-      _AnimatedHoverZoomTiltCardState();
+  State<_AnimatedHoverZoomTiltCard>
+      createState() =>
+          _AnimatedHoverZoomTiltCardState();
 }
 
 class _AnimatedHoverZoomTiltCardState
     extends State<_AnimatedHoverZoomTiltCard>
     with TickerProviderStateMixin {
-  late AnimationController _hoverController;
-  late AnimationController _imageController;
+  late AnimationController
+      _hoverController;
 
-  late Animation<double> _cardScale;
-  late Animation<double> _cardLift;
-  late Animation<double> _imageScale;
+  late AnimationController
+      _imageController;
+
+  late Animation<double>
+      _cardScale;
+
+  late Animation<double>
+      _cardLift;
+
+  late Animation<double>
+      _imageScale;
 
   bool _isHovering = false;
 
@@ -2517,56 +3266,60 @@ class _AnimatedHoverZoomTiltCardState
   void initState() {
     super.initState();
 
-    // -------------------------------------------------------------------------
-    // CARD HOVER ANIMATION
-    // -------------------------------------------------------------------------
-
-    _hoverController = AnimationController(
+    _hoverController =
+        AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 220),
+      duration:
+          const Duration(
+        milliseconds: 220,
+      ),
     );
 
-    _cardScale = Tween<double>(
+    _cardScale =
+        Tween<double>(
       begin: 1.0,
       end: 1.035,
     ).animate(
       CurvedAnimation(
-        parent: _hoverController,
-        curve: Curves.easeOutCubic,
+        parent:
+            _hoverController,
+        curve:
+            Curves.easeOutCubic,
       ),
     );
 
-    _cardLift = Tween<double>(
+    _cardLift =
+        Tween<double>(
       begin: 0.0,
       end: -4.0,
     ).animate(
       CurvedAnimation(
-        parent: _hoverController,
-        curve: Curves.easeOutCubic,
+        parent:
+            _hoverController,
+        curve:
+            Curves.easeOutCubic,
       ),
     );
 
-    // -------------------------------------------------------------------------
-    // IMAGE HOVER ZOOM
-    //
-    // IMPORTANT:
-    // This controller NEVER runs automatically.
-    //
-    // It starts only when the mouse/touch is over the card.
-    // -------------------------------------------------------------------------
-
-    _imageController = AnimationController(
+    _imageController =
+        AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 700),
+      duration:
+          const Duration(
+        milliseconds: 700,
+      ),
     );
 
-    _imageScale = Tween<double>(
+    _imageScale =
+        Tween<double>(
       begin: 1.0,
       end: 1.10,
     ).animate(
       CurvedAnimation(
-        parent: _imageController,
-        curve: Curves.easeInOut,
+        parent:
+            _imageController,
+        curve:
+            Curves.easeInOut,
       ),
     );
   }
@@ -2578,10 +3331,6 @@ class _AnimatedHoverZoomTiltCardState
     super.dispose();
   }
 
-  // ---------------------------------------------------------------------------
-  // START HOVER
-  // ---------------------------------------------------------------------------
-
   void _startHover() {
     if (!mounted) return;
 
@@ -2590,14 +3339,8 @@ class _AnimatedHoverZoomTiltCardState
     });
 
     _hoverController.forward();
-
-    // Image zooms IN only when hovering.
     _imageController.forward();
   }
-
-  // ---------------------------------------------------------------------------
-  // END HOVER
-  // ---------------------------------------------------------------------------
 
   void _endHover() {
     if (!mounted) return;
@@ -2607,132 +3350,215 @@ class _AnimatedHoverZoomTiltCardState
     });
 
     _hoverController.reverse();
-
-    // Image returns to normal.
     _imageController.reverse();
   }
 
-  // ---------------------------------------------------------------------------
-  // TOUCH DOWN
-  // ---------------------------------------------------------------------------
-
-  void _onTapDown(TapDownDetails details) {
+  void _onTapDown(
+    TapDownDetails details,
+  ) {
     _startHover();
   }
 
-  // ---------------------------------------------------------------------------
-  // TOUCH UP
-  // ---------------------------------------------------------------------------
-
-  void _onTapUp(TapUpDetails details) {
+  void _onTapUp(
+    TapUpDetails details,
+  ) {
     _endHover();
 
     widget.onTap();
   }
 
-  // ---------------------------------------------------------------------------
-  // TOUCH CANCEL
-  // ---------------------------------------------------------------------------
-
   void _onTapCancel() {
     _endHover();
   }
 
-  // ---------------------------------------------------------------------------
-  // BUILD
-  // ---------------------------------------------------------------------------
-
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+    BuildContext context,
+  ) {
     return MouseRegion(
-      onEnter: (_) => _startHover(),
-      onExit: (_) => _endHover(),
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTapDown: _onTapDown,
-        onTapUp: _onTapUp,
-        onTapCancel: _onTapCancel,
-        child: AnimatedBuilder(
-          animation: _hoverController,
-          builder: (context, child) {
-            return Transform.translate(
-              offset: Offset(
+      onEnter:
+          (_) => _startHover(),
+      onExit:
+          (_) => _endHover(),
+      cursor:
+          SystemMouseCursors.click,
+      child:
+          GestureDetector(
+        onTapDown:
+            _onTapDown,
+        onTapUp:
+            _onTapUp,
+        onTapCancel:
+            _onTapCancel,
+        child:
+            AnimatedBuilder(
+          animation:
+              _hoverController,
+          builder:
+              (
+            context,
+            child,
+          ) {
+            return Transform
+                .translate(
+              offset:
+                  Offset(
                 0,
-                _cardLift.value,
+                _cardLift
+                    .value,
               ),
-              child: Transform.scale(
-                scale: _cardScale.value,
-                child: child,
+              child:
+                  Transform
+                      .scale(
+                scale:
+                    _cardScale
+                        .value,
+                child:
+                    child,
               ),
             );
           },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOutCubic,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color: _isHovering
-                    ? const Color(0xFF2563EB)
-                    : Colors.grey.shade200,
-                width: _isHovering ? 1.5 : 1,
+          child:
+              AnimatedContainer(
+            duration:
+                const Duration(
+              milliseconds: 220,
+            ),
+            curve:
+                Curves.easeOutCubic,
+            decoration:
+                BoxDecoration(
+              color:
+                  Colors.white,
+              borderRadius:
+                  BorderRadius.circular(
+                18,
+              ),
+              border:
+                  Border.all(
+                color:
+                    _isHovering
+                        ? const Color(
+                            0xFF2563EB,
+                          )
+                        : Colors
+                            .grey
+                            .shade200,
+                width:
+                    _isHovering
+                        ? 1.5
+                        : 1,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: _isHovering
-                      ? const Color(0xFF2563EB)
-                          .withOpacity(0.20)
-                      : Colors.black.withOpacity(0.055),
-                  blurRadius: _isHovering ? 18 : 9,
-                  spreadRadius: _isHovering ? 1 : 0,
-                  offset: _isHovering
-                      ? const Offset(0, 8)
-                      : const Offset(0, 4),
+                  color:
+                      _isHovering
+                          ? const Color(
+                              0xFF2563EB,
+                            ).withOpacity(
+                              0.20,
+                            )
+                          : Colors
+                              .black
+                              .withOpacity(
+                              0.055,
+                            ),
+                  blurRadius:
+                      _isHovering
+                          ? 18
+                          : 9,
+                  spreadRadius:
+                      _isHovering
+                          ? 1
+                          : 0,
+                  offset:
+                      _isHovering
+                          ? const Offset(
+                              0,
+                              8,
+                            )
+                          : const Offset(
+                              0,
+                              4,
+                            ),
                 ),
               ],
             ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(18),
-              child: Column(
+            child:
+                ClipRRect(
+              borderRadius:
+                  BorderRadius.circular(
+                18,
+              ),
+              child:
+                  Column(
                 crossAxisAlignment:
-                    CrossAxisAlignment.start,
+                    CrossAxisAlignment
+                        .start,
                 children: [
-                  // =================================================================
-                  // PRODUCT IMAGE
-                  // =================================================================
-
                   Expanded(
-                    child: ClipRRect(
+                    child:
+                        ClipRRect(
                       borderRadius:
-                          const BorderRadius.vertical(
-                        top: Radius.circular(18),
+                          const BorderRadius
+                              .vertical(
+                        top:
+                            Radius.circular(
+                          18,
+                        ),
                       ),
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: AnimatedBuilder(
-                          animation: _imageController,
-                          builder: (context, child) {
-                            return Transform.scale(
-                              scale: _imageScale.value,
-                              child: child,
+                      child:
+                          SizedBox(
+                        width:
+                            double.infinity,
+                        child:
+                            AnimatedBuilder(
+                          animation:
+                              _imageController,
+                          builder:
+                              (
+                            context,
+                            child,
+                          ) {
+                            return Transform
+                                .scale(
+                              scale:
+                                  _imageScale
+                                      .value,
+                              child:
+                                  child,
                             );
                           },
-                          child: Image.asset(
-                            widget.product.img,
-                            width: double.infinity,
-                            height: double.infinity,
-                            fit: BoxFit.cover,
+                          child:
+                              Image.asset(
+                            widget
+                                .product
+                                .img,
+                            width:
+                                double.infinity,
+                            height:
+                                double.infinity,
+                            fit:
+                                BoxFit.cover,
                             errorBuilder:
-                                (_, __, ___) {
+                                (
+                              _,
+                              __,
+                              ___,
+                            ) {
                               return Container(
                                 color:
                                     Colors.grey.shade100,
-                                child: const Center(
-                                  child: Icon(
-                                    Icons.image,
-                                    color: Colors.grey,
-                                    size: 36,
+                                child:
+                                    const Center(
+                                  child:
+                                      Icon(
+                                    Icons
+                                        .image,
+                                    color:
+                                        Colors.grey,
+                                    size:
+                                        36,
                                   ),
                                 ),
                               );
@@ -2742,81 +3568,105 @@ class _AnimatedHoverZoomTiltCardState
                       ),
                     ),
                   ),
-
-                  // =================================================================
-                  // PRODUCT FOOTER
-                  // =================================================================
-
                   Container(
-                    width: double.infinity,
+                    width:
+                        double.infinity,
                     padding:
-                        const EdgeInsets.symmetric(
+                        const EdgeInsets
+                            .symmetric(
                       horizontal: 10,
                       vertical: 9,
                     ),
                     decoration:
                         BoxDecoration(
                       color:
-                          const Color(0xFFEFF6FF),
-                      border: Border(
-                        top: BorderSide(
+                          const Color(
+                        0xFFEFF6FF,
+                      ),
+                      border:
+                          Border(
+                        top:
+                            BorderSide(
                           color:
                               Colors.blue.shade100,
                         ),
                       ),
                     ),
-                    child: Column(
+                    child:
+                        Column(
                       crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                          CrossAxisAlignment
+                              .start,
                       children: [
                         Text(
-                          widget.product.name,
-                          maxLines: 1,
+                          widget
+                              .product
+                              .name,
+                          maxLines:
+                              1,
                           overflow:
-                              TextOverflow.ellipsis,
+                              TextOverflow
+                                  .ellipsis,
                           style:
                               const TextStyle(
                             fontWeight:
-                                FontWeight.bold,
-                            fontSize: 13,
+                                FontWeight
+                                    .bold,
+                            fontSize:
+                                13,
                             color:
-                                Color(0xFF1E3A8A),
+                                Color(
+                              0xFF1E3A8A,
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 5),
+                        const SizedBox(
+                          height: 5,
+                        ),
                         Row(
                           mainAxisAlignment:
                               MainAxisAlignment
                                   .spaceBetween,
                           children: [
                             Flexible(
-                              child: Text(
-                                widget.product.price,
-                                maxLines: 1,
+                              child:
+                                  Text(
+                                widget
+                                    .product
+                                    .price,
+                                maxLines:
+                                    1,
                                 overflow:
                                     TextOverflow
                                         .ellipsis,
                                 style:
                                     const TextStyle(
                                   fontWeight:
-                                      FontWeight.w900,
+                                      FontWeight
+                                          .w900,
                                   color:
                                       Color(
                                     0xFF1D4ED8,
                                   ),
-                                  fontSize: 12,
+                                  fontSize:
+                                      12,
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 6),
+                            const SizedBox(
+                              width: 6,
+                            ),
                             AnimatedContainer(
                               duration:
                                   const Duration(
-                                milliseconds: 200,
+                                milliseconds:
+                                    200,
                               ),
                               padding:
                                   const EdgeInsets
-                                      .all(5),
+                                      .all(
+                                5,
+                              ),
                               decoration:
                                   BoxDecoration(
                                 color: _isHovering
@@ -2829,9 +3679,11 @@ class _AnimatedHoverZoomTiltCardState
                                 shape:
                                     BoxShape.circle,
                               ),
-                              child: const Icon(
+                              child:
+                                  const Icon(
                                 Icons.add,
-                                size: 14,
+                                size:
+                                    14,
                                 color:
                                     Colors.white,
                               ),
@@ -2853,15 +3705,10 @@ class _AnimatedHoverZoomTiltCardState
 
 // =============================================================================
 // ANIMATED BRAND CARD
-//
-// BEHAVIOR:
-// - NO automatic animation.
-// - Card is completely still normally.
-// - Hover = slight zoom.
-// - Image zooms slightly on hover.
 // =============================================================================
 
-class _AnimatedBrandCard extends StatefulWidget {
+class _AnimatedBrandCard
+    extends StatefulWidget {
   final MenuGroupModel group;
   final int index;
   final bool selected;
@@ -2877,18 +3724,25 @@ class _AnimatedBrandCard extends StatefulWidget {
   });
 
   @override
-  State<_AnimatedBrandCard> createState() =>
-      _AnimatedBrandCardState();
+  State<_AnimatedBrandCard>
+      createState() =>
+          _AnimatedBrandCardState();
 }
 
 class _AnimatedBrandCardState
     extends State<_AnimatedBrandCard>
     with TickerProviderStateMixin {
-  late AnimationController _controller;
-  late AnimationController _imageController;
+  late AnimationController
+      _controller;
 
-  late Animation<double> _scaleAnimation;
-  late Animation<double> _imageAnimation;
+  late AnimationController
+      _imageController;
+
+  late Animation<double>
+      _scaleAnimation;
+
+  late Animation<double>
+      _imageAnimation;
 
   bool _hovering = false;
 
@@ -2896,33 +3750,47 @@ class _AnimatedBrandCardState
   void initState() {
     super.initState();
 
-    _controller = AnimationController(
+    _controller =
+        AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 220),
+      duration:
+          const Duration(
+        milliseconds: 220,
+      ),
     );
 
-    _imageController = AnimationController(
+    _imageController =
+        AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 600),
+      duration:
+          const Duration(
+        milliseconds: 600,
+      ),
     );
 
-    _scaleAnimation = Tween<double>(
+    _scaleAnimation =
+        Tween<double>(
       begin: 1.0,
       end: 1.045,
     ).animate(
       CurvedAnimation(
-        parent: _controller,
-        curve: Curves.easeOutCubic,
+        parent:
+            _controller,
+        curve:
+            Curves.easeOutCubic,
       ),
     );
 
-    _imageAnimation = Tween<double>(
+    _imageAnimation =
+        Tween<double>(
       begin: 1.0,
       end: 1.08,
     ).animate(
       CurvedAnimation(
-        parent: _imageController,
-        curve: Curves.easeInOut,
+        parent:
+            _imageController,
+        curve:
+            Curves.easeInOut,
       ),
     );
   }
@@ -2957,148 +3825,235 @@ class _AnimatedBrandCardState
   }
 
   @override
-  Widget build(BuildContext context) {
-    final brandName = widget.group.title
-        .replaceFirst('Brand - ', '');
+  Widget build(
+    BuildContext context,
+  ) {
+    final brandName =
+        widget.group.title
+            .replaceFirst(
+      'Brand - ',
+      '',
+    );
 
     return MouseRegion(
-      onEnter: (_) => _hoverStart(),
-      onExit: (_) => _hoverEnd(),
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTapDown: (_) => _hoverStart(),
-        onTapUp: (_) {
+      onEnter:
+          (_) => _hoverStart(),
+      onExit:
+          (_) => _hoverEnd(),
+      cursor:
+          SystemMouseCursors.click,
+      child:
+          GestureDetector(
+        onTapDown:
+            (_) => _hoverStart(),
+        onTapUp:
+            (_) {
           _hoverEnd();
           widget.onTap();
         },
-        onTapCancel: _hoverEnd,
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
+        onTapCancel:
+            _hoverEnd,
+        child:
+            AnimatedBuilder(
+          animation:
+              _controller,
+          builder:
+              (
+            context,
+            child,
+          ) {
             return Transform.scale(
-              scale: _scaleAnimation.value,
-              child: child,
+              scale:
+                  _scaleAnimation
+                      .value,
+              child:
+                  child,
             );
           },
-          child: AnimatedContainer(
+          child:
+              AnimatedContainer(
             duration:
-                const Duration(milliseconds: 220),
+                const Duration(
+              milliseconds:
+                  220,
+            ),
             width: 92,
             margin:
-                const EdgeInsets.only(right: 11),
+                const EdgeInsets
+                    .only(
+              right: 11,
+            ),
             padding:
-                const EdgeInsets.all(7),
-            decoration: BoxDecoration(
-              color: widget.selected
-                  ? const Color(0xFFEFF6FF)
-                  : Colors.white,
+                const EdgeInsets
+                    .all(
+              7,
+            ),
+            decoration:
+                BoxDecoration(
+              color:
+                  widget.selected
+                      ? const Color(
+                          0xFFEFF6FF,
+                        )
+                      : Colors.white,
               borderRadius:
-                  BorderRadius.circular(18),
-              border: Border.all(
-                color: widget.selected
-                    ? const Color(0xFF2563EB)
-                    : _hovering
+                  BorderRadius.circular(
+                18,
+              ),
+              border:
+                  Border.all(
+                color:
+                    widget.selected
                         ? const Color(
-                            0xFF60A5FA,
+                            0xFF2563EB,
                           )
-                        : Colors.grey.shade200,
+                        : _hovering
+                            ? const Color(
+                                0xFF60A5FA,
+                              )
+                            : Colors
+                                .grey
+                                .shade200,
                 width:
-                    widget.selected ? 2 : 1,
+                    widget.selected
+                        ? 2
+                        : 1,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: _hovering ||
-                          widget.selected
-                      ? const Color(0xFF2563EB)
-                          .withOpacity(0.18)
-                      : Colors.black
-                          .withOpacity(0.05),
+                  color:
+                      _hovering ||
+                              widget.selected
+                          ? const Color(
+                              0xFF2563EB,
+                            ).withOpacity(
+                              0.18,
+                            )
+                          : Colors
+                              .black
+                              .withOpacity(
+                              0.05,
+                            ),
                   blurRadius:
-                      _hovering ? 14 : 7,
+                      _hovering
+                          ? 14
+                          : 7,
                   offset:
-                      const Offset(0, 4),
+                      const Offset(
+                    0,
+                    4,
+                  ),
                 ),
               ],
             ),
-            child: Column(
+            child:
+                Column(
               mainAxisAlignment:
-                  MainAxisAlignment.center,
+                  MainAxisAlignment
+                      .center,
               children: [
                 Expanded(
-                  child: ClipRRect(
+                  child:
+                      ClipRRect(
                     borderRadius:
-                        BorderRadius.circular(14),
-                    child: Container(
-                      width: double.infinity,
+                        BorderRadius
+                            .circular(
+                      14,
+                    ),
+                    child:
+                        Container(
+                      width:
+                          double.infinity,
                       color:
-                          Colors.grey.shade100,
-                      child: widget.image == null
-                          ? const Icon(
-                              Icons
-                                  .storefront_rounded,
-                              color:
-                                  Color(
-                                0xFF2563EB,
-                              ),
-                              size: 32,
-                            )
-                          : AnimatedBuilder(
-                              animation:
-                                  _imageController,
-                              builder:
-                                  (context, child) {
-                                return Transform.scale(
-                                  scale:
-                                      _imageAnimation
-                                          .value,
+                          Colors
+                              .grey
+                              .shade100,
+                      child:
+                          widget.image ==
+                                  null
+                              ? const Icon(
+                                  Icons
+                                      .storefront_rounded,
+                                  color:
+                                      Color(
+                                    0xFF2563EB,
+                                  ),
+                                  size:
+                                      32,
+                                )
+                              : AnimatedBuilder(
+                                  animation:
+                                      _imageController,
+                                  builder:
+                                      (
+                                    context,
+                                    child,
+                                  ) {
+                                    return Transform
+                                        .scale(
+                                      scale:
+                                          _imageAnimation
+                                              .value,
+                                      child:
+                                          child,
+                                    );
+                                  },
                                   child:
-                                      child,
-                                );
-                              },
-                              child:
-                                  Image.asset(
-                                widget.image!,
-                                fit:
-                                    BoxFit.cover,
-                                errorBuilder:
-                                    (_, __, ___) {
-                                  return const Center(
-                                    child:
-                                        Icon(
-                                      Icons
-                                          .storefront_rounded,
-                                      color:
-                                          Color(
-                                        0xFF2563EB,
-                                      ),
-                                      size: 32,
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
+                                      Image.asset(
+                                    widget
+                                        .image!,
+                                    fit:
+                                        BoxFit.cover,
+                                    errorBuilder:
+                                        (
+                                      _,
+                                      __,
+                                      ___,
+                                    ) {
+                                      return const Center(
+                                        child:
+                                            Icon(
+                                          Icons
+                                              .storefront_rounded,
+                                          color:
+                                              Color(
+                                            0xFF2563EB,
+                                          ),
+                                          size:
+                                              32,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(
+                  height: 6,
+                ),
                 Text(
                   brandName,
-                  maxLines: 1,
+                  maxLines:
+                      1,
                   overflow:
                       TextOverflow.ellipsis,
                   textAlign:
                       TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 11,
+                  style:
+                      TextStyle(
+                    fontSize:
+                        11,
                     fontWeight:
                         FontWeight.w800,
-                    color: widget.selected
-                        ? const Color(
-                            0xFF1D4ED8,
-                          )
-                        : const Color(
-                            0xFF374151,
-                          ),
+                    color:
+                        widget.selected
+                            ? const Color(
+                                0xFF1D4ED8,
+                              )
+                            : const Color(
+                                0xFF374151,
+                              ),
                   ),
                 ),
               ],
@@ -3112,12 +4067,10 @@ class _AnimatedBrandCardState
 
 // =============================================================================
 // ANIMATED FILTER CARD
-//
-// NO CONTINUOUS ANIMATION.
-// Only reacts when the user is near/hovering/tapping.
 // =============================================================================
 
-class _AnimatedFilterCard extends StatefulWidget {
+class _AnimatedFilterCard
+    extends StatefulWidget {
   final String label;
   final IconData icon;
   final bool selected;
@@ -3131,16 +4084,19 @@ class _AnimatedFilterCard extends StatefulWidget {
   });
 
   @override
-  State<_AnimatedFilterCard> createState() =>
-      _AnimatedFilterCardState();
+  State<_AnimatedFilterCard>
+      createState() =>
+          _AnimatedFilterCardState();
 }
 
 class _AnimatedFilterCardState
     extends State<_AnimatedFilterCard>
     with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
+  late AnimationController
+      _controller;
 
-  late Animation<double> _scaleAnimation;
+  late Animation<double>
+      _scaleAnimation;
 
   bool _hovering = false;
 
@@ -3148,18 +4104,25 @@ class _AnimatedFilterCardState
   void initState() {
     super.initState();
 
-    _controller = AnimationController(
+    _controller =
+        AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 200),
+      duration:
+          const Duration(
+        milliseconds: 200,
+      ),
     );
 
-    _scaleAnimation = Tween<double>(
+    _scaleAnimation =
+        Tween<double>(
       begin: 1.0,
       end: 1.045,
     ).animate(
       CurvedAnimation(
-        parent: _controller,
-        curve: Curves.easeOutCubic,
+        parent:
+            _controller,
+        curve:
+            Curves.easeOutCubic,
       ),
     );
   }
@@ -3191,91 +4154,148 @@ class _AnimatedFilterCardState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+    BuildContext context,
+  ) {
     return MouseRegion(
-      onEnter: (_) => _hoverStart(),
-      onExit: (_) => _hoverEnd(),
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTapDown: (_) => _hoverStart(),
-        onTapUp: (_) {
+      onEnter:
+          (_) => _hoverStart(),
+      onExit:
+          (_) => _hoverEnd(),
+      cursor:
+          SystemMouseCursors.click,
+      child:
+          GestureDetector(
+        onTapDown:
+            (_) => _hoverStart(),
+        onTapUp:
+            (_) {
           _hoverEnd();
           widget.onTap();
         },
-        onTapCancel: _hoverEnd,
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
+        onTapCancel:
+            _hoverEnd,
+        child:
+            AnimatedBuilder(
+          animation:
+              _controller,
+          builder:
+              (
+            context,
+            child,
+          ) {
             return Transform.scale(
-              scale: _scaleAnimation.value,
-              child: child,
+              scale:
+                  _scaleAnimation
+                      .value,
+              child:
+                  child,
             );
           },
-          child: AnimatedContainer(
+          child:
+              AnimatedContainer(
             duration:
-                const Duration(milliseconds: 200),
+                const Duration(
+              milliseconds:
+                  200,
+            ),
             margin:
-                const EdgeInsets.only(right: 8),
+                const EdgeInsets
+                    .only(
+              right: 8,
+            ),
             padding:
-                const EdgeInsets.symmetric(
+                const EdgeInsets
+                    .symmetric(
               horizontal: 14,
               vertical: 8,
             ),
-            decoration: BoxDecoration(
-              color: widget.selected
-                  ? const Color(0xFF2563EB)
-                  : Colors.white,
+            decoration:
+                BoxDecoration(
+              color:
+                  widget.selected
+                      ? const Color(
+                          0xFF2563EB,
+                        )
+                      : Colors.white,
               borderRadius:
-                  BorderRadius.circular(15),
-              border: Border.all(
-                color: widget.selected
-                    ? const Color(0xFF2563EB)
-                    : _hovering
+                  BorderRadius.circular(
+                15,
+              ),
+              border:
+                  Border.all(
+                color:
+                    widget.selected
                         ? const Color(
-                            0xFF60A5FA,
+                            0xFF2563EB,
                           )
-                        : Colors.grey.shade200,
+                        : _hovering
+                            ? const Color(
+                                0xFF60A5FA,
+                              )
+                            : Colors
+                                .grey
+                                .shade200,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: _hovering ||
-                          widget.selected
-                      ? const Color(0xFF2563EB)
-                          .withOpacity(0.18)
-                      : Colors.black
-                          .withOpacity(0.04),
+                  color:
+                      _hovering ||
+                              widget.selected
+                          ? const Color(
+                              0xFF2563EB,
+                            ).withOpacity(
+                              0.18,
+                            )
+                          : Colors
+                              .black
+                              .withOpacity(
+                              0.04,
+                            ),
                   blurRadius:
-                      _hovering ? 10 : 6,
+                      _hovering
+                          ? 10
+                          : 6,
                   offset:
-                      const Offset(0, 3),
+                      const Offset(
+                    0,
+                    3,
+                  ),
                 ),
               ],
             ),
-            child: Row(
+            child:
+                Row(
               mainAxisSize:
                   MainAxisSize.min,
               children: [
                 Icon(
                   widget.icon,
                   size: 16,
-                  color: widget.selected
-                      ? Colors.white
-                      : const Color(
-                          0xFF2563EB,
-                        ),
+                  color:
+                      widget.selected
+                          ? Colors.white
+                          : const Color(
+                              0xFF2563EB,
+                            ),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(
+                  width: 6,
+                ),
                 Text(
                   widget.label,
-                  style: TextStyle(
-                    fontSize: 11,
+                  style:
+                      TextStyle(
+                    fontSize:
+                        11,
                     fontWeight:
                         FontWeight.w800,
-                    color: widget.selected
-                        ? Colors.white
-                        : const Color(
-                            0xFF374151,
-                          ),
+                    color:
+                        widget.selected
+                            ? Colors.white
+                            : const Color(
+                                0xFF374151,
+                              ),
                   ),
                 ),
               ],
@@ -3289,13 +4309,10 @@ class _AnimatedFilterCardState
 
 // =============================================================================
 // ANIMATED CART CARD
-//
-// NO CONTINUOUS ANIMATION.
-// Entry animation happens once.
-// Hover animation happens only when mouse is near.
 // =============================================================================
 
-class _AnimatedCartCard extends StatefulWidget {
+class _AnimatedCartCard
+    extends StatefulWidget {
   final CartItemModel item;
   final int index;
   final VoidCallback onDelete;
@@ -3307,16 +4324,19 @@ class _AnimatedCartCard extends StatefulWidget {
   });
 
   @override
-  State<_AnimatedCartCard> createState() =>
-      _AnimatedCartCardState();
+  State<_AnimatedCartCard>
+      createState() =>
+          _AnimatedCartCardState();
 }
 
 class _AnimatedCartCardState
     extends State<_AnimatedCartCard>
     with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
+  late AnimationController
+      _controller;
 
-  late Animation<double> _entryAnimation;
+  late Animation<double>
+      _entryAnimation;
 
   bool _hovering = false;
 
@@ -3324,20 +4344,25 @@ class _AnimatedCartCardState
   void initState() {
     super.initState();
 
-    _controller = AnimationController(
+    _controller =
+        AnimationController(
       vsync: this,
       duration: Duration(
-        milliseconds: 350 +
-            (widget.index * 60),
+        milliseconds:
+            350 +
+                (widget.index *
+                    60),
       ),
     );
 
-    _entryAnimation = CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOutCubic,
+    _entryAnimation =
+        CurvedAnimation(
+      parent:
+          _controller,
+      curve:
+          Curves.easeOutCubic,
     );
 
-    // Runs ONCE only.
     _controller.forward();
   }
 
@@ -3348,141 +4373,259 @@ class _AnimatedCartCardState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+    BuildContext context,
+  ) {
     return FadeTransition(
-      opacity: _entryAnimation,
-      child: SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(0.12, 0),
-          end: Offset.zero,
-        ).animate(_entryAnimation),
-        child: MouseRegion(
-          onEnter: (_) {
+      opacity:
+          _entryAnimation,
+      child:
+          SlideTransition(
+        position:
+            Tween<Offset>(
+          begin:
+              const Offset(
+            0.12,
+            0,
+          ),
+          end:
+              Offset.zero,
+        ).animate(
+          _entryAnimation,
+        ),
+        child:
+            MouseRegion(
+          onEnter:
+              (_) {
             if (!mounted) return;
-            setState(() => _hovering = true);
+
+            setState(
+              () => _hovering =
+                  true,
+            );
           },
-          onExit: (_) {
+          onExit:
+              (_) {
             if (!mounted) return;
-            setState(() => _hovering = false);
+
+            setState(
+              () => _hovering =
+                  false,
+            );
           },
-          cursor: SystemMouseCursors.click,
-          child: AnimatedContainer(
+          cursor:
+              SystemMouseCursors.click,
+          child:
+              AnimatedContainer(
             duration:
-                const Duration(milliseconds: 220),
+                const Duration(
+              milliseconds:
+                  220,
+            ),
             margin:
-                const EdgeInsets.only(bottom: 11),
+                const EdgeInsets
+                    .only(
+              bottom: 11,
+            ),
             padding:
-                const EdgeInsets.all(11),
-            transform: _hovering
-                ? (Matrix4.identity()
-                  ..translate(0.0, -3.0)
-                  ..scale(1.015))
-                : Matrix4.identity(),
-            decoration: BoxDecoration(
-              color: Colors.white,
+                const EdgeInsets
+                    .all(
+              11,
+            ),
+            transform:
+                _hovering
+                    ? (Matrix4.identity()
+                      ..translate(
+                        0.0,
+                        -3.0,
+                      )
+                      ..scale(
+                        1.015,
+                      ))
+                    : Matrix4.identity(),
+            decoration:
+                BoxDecoration(
+              color:
+                  Colors.white,
               borderRadius:
-                  BorderRadius.circular(18),
-              border: Border.all(
-                color: _hovering
-                    ? const Color(0xFF60A5FA)
-                    : Colors.grey.shade200,
+                  BorderRadius.circular(
+                18,
+              ),
+              border:
+                  Border.all(
+                color:
+                    _hovering
+                        ? const Color(
+                            0xFF60A5FA,
+                          )
+                        : Colors
+                            .grey
+                            .shade200,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: _hovering
-                      ? const Color(0xFF2563EB)
-                          .withOpacity(0.15)
-                      : Colors.black
-                          .withOpacity(0.045),
+                  color:
+                      _hovering
+                          ? const Color(
+                              0xFF2563EB,
+                            ).withOpacity(
+                              0.15,
+                            )
+                          : Colors
+                              .black
+                              .withOpacity(
+                              0.045,
+                            ),
                   blurRadius:
-                      _hovering ? 15 : 10,
+                      _hovering
+                          ? 15
+                          : 10,
                   offset:
-                      const Offset(0, 5),
+                      const Offset(
+                    0,
+                    5,
+                  ),
                 ),
               ],
             ),
-            child: Row(
+            child:
+                Row(
               children: [
                 ClipRRect(
                   borderRadius:
-                      BorderRadius.circular(13),
-                  child: SizedBox(
+                      BorderRadius.circular(
+                    13,
+                  ),
+                  child:
+                      SizedBox(
                     width: 72,
                     height: 72,
-                    child: Image.asset(
-                      widget.item.img,
-                      fit: BoxFit.cover,
+                    child:
+                        Image.asset(
+                      widget
+                          .item
+                          .img,
+                      fit:
+                          BoxFit.cover,
                       errorBuilder:
-                          (_, __, ___) {
+                          (
+                        _,
+                        __,
+                        ___,
+                      ) {
                         return Container(
                           color:
-                              Colors.grey.shade100,
-                          child: const Icon(
-                            Icons.image,
-                            color: Colors.grey,
-                            size: 30,
+                              Colors
+                                  .grey
+                                  .shade100,
+                          child:
+                              const Icon(
+                            Icons
+                                .image,
+                            color:
+                                Colors.grey,
+                            size:
+                                30,
                           ),
                         );
                       },
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(
+                  width: 12,
+                ),
                 Expanded(
-                  child: Column(
+                  child:
+                      Column(
                     crossAxisAlignment:
-                        CrossAxisAlignment.start,
+                        CrossAxisAlignment
+                            .start,
                     children: [
                       Text(
-                        widget.item.name,
-                        maxLines: 2,
+                        widget
+                            .item
+                            .name,
+                        maxLines:
+                            2,
                         overflow:
-                            TextOverflow.ellipsis,
+                            TextOverflow
+                                .ellipsis,
                         style:
                             const TextStyle(
-                          fontSize: 14,
+                          fontSize:
+                              14,
                           fontWeight:
-                              FontWeight.w800,
+                              FontWeight
+                                  .w800,
                           color:
-                              Color(0xFF1F2937),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      if (widget.item.chosenExtras
-                          .isNotEmpty)
-                        Text(
-                          widget.item.chosenExtras
-                              .join(', '),
-                          maxLines: 2,
-                          overflow:
-                              TextOverflow.ellipsis,
-                          style:
-                              const TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey,
+                              Color(
+                            0xFF1F2937,
                           ),
                         ),
-                      const SizedBox(height: 5),
+                      ),
+                      const SizedBox(
+                        height: 6,
+                      ),
+                      if (widget
+                          .item
+                          .chosenExtras
+                          .isNotEmpty)
+                        Text(
+                          widget
+                              .item
+                              .chosenExtras
+                              .join(
+                            ', ',
+                          ),
+                          maxLines:
+                              2,
+                          overflow:
+                              TextOverflow
+                                  .ellipsis,
+                          style:
+                              const TextStyle(
+                            fontSize:
+                                11,
+                            color:
+                                Colors.grey,
+                          ),
+                        ),
+                      const SizedBox(
+                        height: 5,
+                      ),
                       Text(
-                        widget.item.price,
+                        widget
+                            .item
+                            .price,
                         style:
                             const TextStyle(
-                          fontSize: 13,
+                          fontSize:
+                              13,
                           fontWeight:
-                              FontWeight.w900,
+                              FontWeight
+                                  .w900,
                           color:
-                              Color(0xFF1D4ED8),
+                              Color(
+                            0xFF1D4ED8,
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
                 IconButton(
-                  tooltip: 'Remove',
-                  onPressed: widget.onDelete,
-                  icon: const Icon(
-                    Icons.delete_outline_rounded,
-                    color: Colors.red,
+                  tooltip:
+                      'Remove',
+                  onPressed:
+                      widget
+                          .onDelete,
+                  icon:
+                      const Icon(
+                    Icons
+                        .delete_outline_rounded,
+                    color:
+                        Colors.red,
                     size: 23,
                   ),
                 ),
@@ -3496,342 +4639,11 @@ class _AnimatedCartCardState
 }
 
 // =============================================================================
-// ANIMATED ORDER CARD
-//
-// NO CONTINUOUS ANIMATION.
-// Entry animation happens ONCE.
-// Hover effect only when mouse is near.
-// =============================================================================
-
-class _AnimatedOrderCard extends StatefulWidget {
-  final Map<String, dynamic> order;
-  final int index;
-
-  const _AnimatedOrderCard({
-    required this.order,
-    required this.index,
-  });
-
-  @override
-  State<_AnimatedOrderCard> createState() =>
-      _AnimatedOrderCardState();
-}
-
-class _AnimatedOrderCardState
-    extends State<_AnimatedOrderCard>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  late Animation<double> _entryAnimation;
-
-  bool _hovering = false;
-
-  @override
-  void initState() {
-    super.initState();
-
-    _controller = AnimationController(
-      vsync: this,
-      duration: Duration(
-        milliseconds:
-            400 + (widget.index * 60),
-      ),
-    );
-
-    _entryAnimation = CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOutCubic,
-    );
-
-    // Only once.
-    _controller.forward();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  String _value(String key) {
-    final value = widget.order[key];
-
-    if (value == null) {
-      return '';
-    }
-
-    return value.toString();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final orderId =
-        _value('id').isNotEmpty
-            ? _value('id')
-            : _value('order_id');
-
-    final date =
-        _value('created_at').isNotEmpty
-            ? _value('created_at')
-            : _value('date');
-
-    final total =
-        _value('total_amount').isNotEmpty
-            ? _value('total_amount')
-            : _value('total');
-
-    final status =
-        _value('status').isNotEmpty
-            ? _value('status')
-            : 'Placed';
-
-    final items = widget.order['items'];
-
-    String itemText = '';
-
-    if (items is List) {
-      itemText = items.map((item) {
-        if (item is Map) {
-          return item['name']?.toString() ??
-              'Item';
-        }
-
-        return item.toString();
-      }).join(', ');
-    }
-
-    return FadeTransition(
-      opacity: _entryAnimation,
-      child: SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(0, 0.10),
-          end: Offset.zero,
-        ).animate(_entryAnimation),
-        child: MouseRegion(
-          onEnter: (_) {
-            if (!mounted) return;
-            setState(() => _hovering = true);
-          },
-          onExit: (_) {
-            if (!mounted) return;
-            setState(() => _hovering = false);
-          },
-          child: AnimatedContainer(
-            duration:
-                const Duration(milliseconds: 220),
-            margin:
-                const EdgeInsets.only(bottom: 12),
-            padding:
-                const EdgeInsets.all(15),
-            transform: _hovering
-                ? (Matrix4.identity()
-                  ..translate(0.0, -3.0)
-                  ..scale(1.012))
-                : Matrix4.identity(),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius:
-                  BorderRadius.circular(18),
-              border: Border.all(
-                color: _hovering
-                    ? const Color(0xFF60A5FA)
-                    : Colors.grey.shade200,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: _hovering
-                      ? const Color(0xFF2563EB)
-                          .withOpacity(0.14)
-                      : Colors.black
-                          .withOpacity(0.045),
-                  blurRadius:
-                      _hovering ? 15 : 10,
-                  offset:
-                      const Offset(0, 5),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 42,
-                      height: 42,
-                      decoration:
-                          BoxDecoration(
-                        color:
-                            const Color(
-                          0xFFEFF6FF,
-                        ),
-                        borderRadius:
-                            BorderRadius
-                                .circular(12),
-                      ),
-                      child: const Icon(
-                        Icons
-                            .receipt_long_rounded,
-                        color:
-                            Color(0xFF2563EB),
-                        size: 22,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment:
-                            CrossAxisAlignment
-                                .start,
-                        children: [
-                          Text(
-                            orderId.isEmpty
-                                ? 'Order'
-                                : 'Order #$orderId',
-                            style:
-                                const TextStyle(
-                              fontWeight:
-                                  FontWeight.w900,
-                              fontSize: 14,
-                              color:
-                                  Color(
-                                0xFF1F2937,
-                              ),
-                            ),
-                          ),
-                          if (date.isNotEmpty)
-                            Padding(
-                              padding:
-                                  const EdgeInsets
-                                      .only(
-                                top: 3,
-                              ),
-                              child: Text(
-                                date,
-                                maxLines: 1,
-                                overflow:
-                                    TextOverflow
-                                        .ellipsis,
-                                style:
-                                    const TextStyle(
-                                  fontSize: 10,
-                                  color:
-                                      Colors.grey,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding:
-                          const EdgeInsets
-                              .symmetric(
-                        horizontal: 9,
-                        vertical: 5,
-                      ),
-                      decoration:
-                          BoxDecoration(
-                        color:
-                            Colors.green.shade50,
-                        borderRadius:
-                            BorderRadius.circular(
-                          20,
-                        ),
-                      ),
-                      child: Text(
-                        status,
-                        style: TextStyle(
-                          color:
-                              Colors.green.shade700,
-                          fontSize: 10,
-                          fontWeight:
-                              FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 13),
-                if (itemText.isNotEmpty)
-                  Container(
-                    width: double.infinity,
-                    padding:
-                        const EdgeInsets.all(10),
-                    decoration:
-                        BoxDecoration(
-                      color:
-                          Colors.grey.shade50,
-                      borderRadius:
-                          BorderRadius.circular(
-                        11,
-                      ),
-                    ),
-                    child: Text(
-                      itemText,
-                      maxLines: 3,
-                      overflow:
-                          TextOverflow.ellipsis,
-                      style:
-                          const TextStyle(
-                        fontSize: 11,
-                        color:
-                            Color(0xFF4B5563),
-                        fontWeight:
-                            FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 11),
-                Row(
-                  mainAxisAlignment:
-                      MainAxisAlignment
-                          .spaceBetween,
-                  children: [
-                    const Text(
-                      'Total',
-                      style:
-                          TextStyle(
-                        fontSize: 12,
-                        color:
-                            Colors.grey,
-                        fontWeight:
-                            FontWeight.w600,
-                      ),
-                    ),
-                    Text(
-                      total.isEmpty
-                          ? '₹0'
-                          : '₹$total',
-                      style:
-                          const TextStyle(
-                        fontSize: 16,
-                        fontWeight:
-                            FontWeight.w900,
-                        color:
-                            Color(0xFF1D4ED8),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// =============================================================================
 // ANIMATED DIALOG IMAGE
-//
-// NO CONTINUOUS ANIMATION.
-// Image zooms only when mouse is over the image.
 // =============================================================================
 
-class _AnimatedDialogImage extends StatefulWidget {
+class _AnimatedDialogImage
+    extends StatefulWidget {
   final String image;
 
   const _AnimatedDialogImage({
@@ -3839,16 +4651,19 @@ class _AnimatedDialogImage extends StatefulWidget {
   });
 
   @override
-  State<_AnimatedDialogImage> createState() =>
-      _AnimatedDialogImageState();
+  State<_AnimatedDialogImage>
+      createState() =>
+          _AnimatedDialogImageState();
 }
 
 class _AnimatedDialogImageState
     extends State<_AnimatedDialogImage>
     with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
+  late AnimationController
+      _controller;
 
-  late Animation<double> _scaleAnimation;
+  late Animation<double>
+      _scaleAnimation;
 
   bool _hovering = false;
 
@@ -3856,19 +4671,25 @@ class _AnimatedDialogImageState
   void initState() {
     super.initState();
 
-    _controller = AnimationController(
+    _controller =
+        AnimationController(
       vsync: this,
       duration:
-          const Duration(milliseconds: 500),
+          const Duration(
+        milliseconds: 500,
+      ),
     );
 
-    _scaleAnimation = Tween<double>(
+    _scaleAnimation =
+        Tween<double>(
       begin: 1.0,
       end: 1.07,
     ).animate(
       CurvedAnimation(
-        parent: _controller,
-        curve: Curves.easeInOut,
+        parent:
+            _controller,
+        curve:
+            Curves.easeInOut,
       ),
     );
   }
@@ -3900,51 +4721,94 @@ class _AnimatedDialogImageState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+    BuildContext context,
+  ) {
     return MouseRegion(
-      onEnter: (_) => _start(),
-      onExit: (_) => _end(),
-      child: GestureDetector(
-        onTapDown: (_) => _start(),
-        onTapUp: (_) => _end(),
-        onTapCancel: _end,
-        child: Container(
-          width: double.infinity,
+      onEnter:
+          (_) => _start(),
+      onExit:
+          (_) => _end(),
+      child:
+          GestureDetector(
+        onTapDown:
+            (_) => _start(),
+        onTapUp:
+            (_) => _end(),
+        onTapCancel:
+            _end,
+        child:
+            Container(
+          width:
+              double.infinity,
           height: 190,
-          decoration: BoxDecoration(
-            color: Colors.grey.shade100,
+          decoration:
+              BoxDecoration(
+            color:
+                Colors.grey.shade100,
             borderRadius:
-                BorderRadius.circular(18),
-            border: Border.all(
-              color: _hovering
-                  ? const Color(0xFF60A5FA)
-                  : Colors.grey.shade200,
+                BorderRadius.circular(
+              18,
+            ),
+            border:
+                Border.all(
+              color:
+                  _hovering
+                      ? const Color(
+                          0xFF60A5FA,
+                        )
+                      : Colors
+                          .grey
+                          .shade200,
             ),
           ),
-          child: ClipRRect(
+          child:
+              ClipRRect(
             borderRadius:
-                BorderRadius.circular(18),
-            child: AnimatedBuilder(
-              animation: _controller,
-              builder: (context, child) {
+                BorderRadius.circular(
+              18,
+            ),
+            child:
+                AnimatedBuilder(
+              animation:
+                  _controller,
+              builder:
+                  (
+                context,
+                child,
+              ) {
                 return Transform.scale(
-                  scale: _scaleAnimation.value,
-                  child: child,
+                  scale:
+                      _scaleAnimation
+                          .value,
+                  child:
+                      child,
                 );
               },
-              child: Image.asset(
+              child:
+                  Image.asset(
                 widget.image,
-                width: double.infinity,
-                height: double.infinity,
-                fit: BoxFit.contain,
+                width:
+                    double.infinity,
+                height:
+                    double.infinity,
+                fit:
+                    BoxFit.contain,
                 errorBuilder:
-                    (_, __, ___) {
+                    (
+                  _,
+                  __,
+                  ___,
+                ) {
                   return const Center(
-                    child: Icon(
+                    child:
+                        Icon(
                       Icons
                           .image_not_supported_outlined,
-                      color: Colors.grey,
-                      size: 45,
+                      color:
+                          Colors.grey,
+                      size:
+                          45,
                     ),
                   );
                 },
