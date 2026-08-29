@@ -1,4 +1,6 @@
 {
+  "public": true,
+  "outputDirectory": "build/web",
   "rewrites": [
     {
       "source": "/(.*)",
