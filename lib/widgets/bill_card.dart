@@ -1,7 +1,17 @@
 // =============================================================================
 // BILL CARD WIDGET
 // lib/widgets/bill_card.dart
+//
+// UPDATED:
+// - The remaining-time / unlock countdown now ticks on its own (1-second
+//   internal Timer) instead of relying on whatever screen embeds this
+//   widget to rebuild it. This fixes bills showing a stale/identical
+//   "remaining" value.
+// - Cancelled items (marked unavailable by delivery) are flagged per-order
+//   and are already excluded from the total by BillingService.orderTotal().
 // =============================================================================
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 
@@ -35,6 +45,34 @@ class _BillCardState extends State<BillCard> {
   final DatabaseService _db = DatabaseService();
   bool _busy = false;
 
+  Timer? _tickTimer;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // ---------------------------------------------------------------------
+    // Only bother ticking while this specific cycle is still locked — once
+    // unlocked there's nothing left to count down, so we don't waste
+    // rebuilds.
+    // ---------------------------------------------------------------------
+    if (widget.cycle['isUnlocked'] != true) {
+      _tickTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) return;
+        setState(() {});
+        if (BillingService.getRemainingTimeForCycle(widget.cycle) == 'Unlocked') {
+          _tickTimer?.cancel();
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _tickTimer?.cancel();
+    super.dispose();
+  }
+
   Future<bool> _confirmDelete({
     required String title,
     required String message,
@@ -47,10 +85,7 @@ class _BillCardState extends State<BillCard> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           icon: const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 34),
           title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-          content: Text(
-            message,
-            style: const TextStyle(fontSize: 13.5, height: 1.4),
-          ),
+          content: Text(message, style: const TextStyle(fontSize: 13.5, height: 1.4)),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
@@ -80,8 +115,7 @@ class _BillCardState extends State<BillCard> {
 
     final ok = await _confirmDelete(
       title: 'Delete this order?',
-      message:
-          'This will permanently delete Order #$orderId '
+      message: 'This will permanently delete Order #$orderId '
           '(₹${BillingService.orderTotal(order).toStringAsFixed(2)}) '
           'from this bill. This action CANNOT be undone.',
     );
@@ -105,8 +139,7 @@ class _BillCardState extends State<BillCard> {
 
     final ok = await _confirmDelete(
       title: 'Delete Bill #$billNumber?',
-      message:
-          'This will permanently delete all ${orders.length} order(s) in '
+      message: 'This will permanently delete all ${orders.length} order(s) in '
           'Bill #$billNumber for ${widget.customer['name'] ?? 'this customer'}, '
           'and its generated PDF record. This action CANNOT be undone.',
     );
@@ -184,8 +217,9 @@ class _BillCardState extends State<BillCard> {
     final orders = List<Map<String, dynamic>>.from(cycle['orders'] ?? []);
     final isUnlocked = cycle['isUnlocked'] == true;
     final isPaid = cycle['paymentStatus']?.toString() == 'Paid';
-    
-    // Dynamically calculate total amount from active orders
+
+    // Total automatically excludes any item marked cancelled (delivery
+    // "Not Available") — see BillingService.orderTotal().
     final double total = orders.fold(
       0.0,
       (sum, order) => sum + BillingService.orderTotal(order),
@@ -198,6 +232,10 @@ class _BillCardState extends State<BillCard> {
         BillingService.formatCalendarLong(cycle['firstOrderTime'] as DateTime);
     final String endLong = cycle['endCalendarLong'] as String? ??
         BillingService.formatCalendarLong(cycle['maturityTime'] as DateTime);
+
+    // Recomputed every second while _tickTimer is running, so this is
+    // always accurate — no more stuck/identical remaining values.
+    final String liveRemaining = BillingService.getRemainingTimeForCycle(cycle);
 
     late final String statusLabel;
     late final Color statusColor;
@@ -275,9 +313,7 @@ class _BillCardState extends State<BillCard> {
               _calendarRow(
                 Icons.lock_clock,
                 isUnlocked ? 'Unlocked' : 'Unlocks',
-                isUnlocked
-                    ? endLong
-                    : '$endLong  (${BillingService.getRemainingTimeForCycle(cycle)})',
+                isUnlocked ? endLong : '$endLong  ($liveRemaining)',
               ),
 
               // ORDERS IN THIS BILL
@@ -295,38 +331,57 @@ class _BillCardState extends State<BillCard> {
                       final orderId = order['id']?.toString() ?? '';
                       final amt = BillingService.orderTotal(order);
                       final orderDate = BillingService.getOrderCreatedAt(order);
+                      final items = (order['items'] as List?) ?? [];
+                      final hasCancelled = items.any((raw) {
+                        final item = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+                        return BillingService.isItemCancelled(item);
+                      });
 
                       return Padding(
                         padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('Order #$orderId',
-                                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    BillingService.formatCalendarShort(orderDate),
-                                    style: TextStyle(fontSize: 10.5, color: Colors.grey.shade600),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('Order #$orderId',
+                                          style: const TextStyle(
+                                              fontSize: 12.5, fontWeight: FontWeight.w600)),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        BillingService.formatCalendarShort(orderDate),
+                                        style: TextStyle(fontSize: 10.5, color: Colors.grey.shade600),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Text('₹${amt.toStringAsFixed(2)}',
+                                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5)),
+                                if (widget.allowDeleteOrders) ...[
+                                  const SizedBox(width: 6),
+                                  InkWell(
+                                    borderRadius: BorderRadius.circular(20),
+                                    onTap: () => _deleteOrder(order),
+                                    child: const Padding(
+                                      padding: EdgeInsets.all(4),
+                                      child: Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                                    ),
                                   ),
                                 ],
-                              ),
+                              ],
                             ),
-                            Text('₹${amt.toStringAsFixed(2)}',
-                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5)),
-                            if (widget.allowDeleteOrders) ...[
-                              const SizedBox(width: 6),
-                              InkWell(
-                                borderRadius: BorderRadius.circular(20),
-                                onTap: () => _deleteOrder(order),
-                                child: const Padding(
-                                  padding: EdgeInsets.all(4),
-                                  child: Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                            if (hasCancelled)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  'Some products in this order were unavailable and are not billed.',
+                                  style: TextStyle(fontSize: 10, color: Colors.orange.shade800),
                                 ),
                               ),
-                            ],
                           ],
                         ),
                       );

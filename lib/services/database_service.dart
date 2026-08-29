@@ -3,11 +3,14 @@
 //
 // UPDATED IN THIS VERSION
 // -----------------------------------------------------------------------------
-// Added two LIVE Firestore streams so the customer payment screen can show
-// orders/bills updating in real time (no manual refresh needed):
-//   - streamOrdersForCustomer(mobile)
-//   - streamGeneratedBillsForCustomer(mobile)
-// Everything else is unchanged from before.
+// - Live Firestore streams for the customer payment screen:
+//     streamOrdersForCustomer(mobile)
+//     streamGeneratedBillsForCustomer(mobile)
+// - Every order item now carries an 'itemStatus' field ('pending' by
+//   default) so delivery can mark individual products Available /
+//   Not Available.
+// - New methods: updateOrderItemStatus() and cancelEntireOrder() to support
+//   the delivery dashboard's per-product controls.
 // =============================================================================
 
 import 'dart:convert';
@@ -356,6 +359,9 @@ class DatabaseService {
   // ORDERS & BANNERS
   // ======================================================
 
+  /// UPDATED: every item is normalized with an 'itemStatus' field
+  /// ('pending' by default) so the delivery dashboard has something to
+  /// toggle to 'delivered' or 'cancelled' per product.
   Future<String> saveOrder({
     required String customerMobile,
     required String customerName,
@@ -363,11 +369,17 @@ class DatabaseService {
     required List<Map<String, dynamic>> items,
     required String totalAmount,
   }) async {
+    final normalizedItems = items.map((item) {
+      final copy = Map<String, dynamic>.from(item);
+      copy['itemStatus'] ??= 'pending'; // pending | delivered | cancelled
+      return copy;
+    }).toList();
+
     final docRef = await _orders.add({
       'customerMobile': customerMobile,
       'customerName': customerName,
       'address': address,
-      'items': items,
+      'items': normalizedItems,
       'totalAmount': totalAmount,
       'status': 'Pending',
       'paymentStatus': 'Pending',
@@ -389,12 +401,12 @@ class DatabaseService {
   }
 
   // ------------------------------------------------------
-  // NEW: LIVE ORDER STREAM FOR ONE CUSTOMER
+  // LIVE ORDER STREAM FOR ONE CUSTOMER
   //
   // Powers the "live" section on customer_payment_screen.dart — the moment
-  // a new order is placed, or the admin updates a status/payment field in
-  // Firestore, this stream pushes the change straight to the UI. No manual
-  // refresh or polling needed.
+  // a new order is placed, or the admin/delivery updates a status/payment/
+  // item field in Firestore, this stream pushes the change straight to the
+  // UI. No manual refresh or polling needed.
   // ------------------------------------------------------
 
   Stream<List<Map<String, dynamic>>> streamOrdersForCustomer(String mobile) {
@@ -414,6 +426,59 @@ class DatabaseService {
     }
     await _orders.doc(orderId).update(updateData);
   }
+
+  // ------------------------------------------------------
+  // NEW: PER-PRODUCT DELIVERY STATUS
+  //
+  // Firestore can't patch a single array element by index directly, so we
+  // read the order, mutate the items list in memory, and write the whole
+  // list back. itemIndex must match the index inside the order['items']
+  // list the caller already has.
+  //
+  // status must be one of: 'pending' | 'delivered' | 'cancelled'.
+  // 'cancelled' items are automatically excluded from billing by
+  // BillingService.orderTotal().
+  // ------------------------------------------------------
+
+  Future<void> updateOrderItemStatus({
+    required String orderId,
+    required int itemIndex,
+    required String status,
+  }) async {
+    final docRef = _orders.doc(orderId);
+    final snap = await docRef.get();
+    if (!snap.exists) return;
+
+    final data = snap.data();
+    final items = List<Map<String, dynamic>>.from(
+      (data?['items'] as List? ?? []).map(
+        (e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{},
+      ),
+    );
+
+    if (itemIndex < 0 || itemIndex >= items.length) return;
+
+    items[itemIndex]['itemStatus'] = status;
+
+    await docRef.update({'items': items});
+  }
+
+  // ------------------------------------------------------
+  // NEW: CANCEL AN ENTIRE ORDER
+  //
+  // Used by the delivery dashboard when every product in an order is
+  // unavailable — there's nothing to photograph or deliver. A Cancelled
+  // order never enters any billing cycle (only Completed/Delivered orders
+  // are billable, see customer_payment_screen.dart / admin logic).
+  // ------------------------------------------------------
+
+  Future<void> cancelEntireOrder({required String orderId}) async {
+    await _orders.doc(orderId).update({'status': 'Cancelled'});
+  }
+
+  // ------------------------------------------------------
+  // PAYMENT STATUS
+  // ------------------------------------------------------
 
   Future<void> updateOrderPaymentStatus({
     required dynamic orderId,
@@ -504,7 +569,7 @@ class DatabaseService {
   }
 
   // ------------------------------------------------------
-  // NEW: LIVE GENERATED-BILLS STREAM FOR ONE CUSTOMER
+  // LIVE GENERATED-BILLS STREAM FOR ONE CUSTOMER
   //
   // Keeps "WhatsApp Sent" / "Paid" flags on the customer payment screen
   // live too — e.g. if the admin marks a bill Paid from the admin

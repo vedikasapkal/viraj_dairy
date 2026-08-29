@@ -2,10 +2,18 @@
 // CUSTOMER PAYMENT SCREEN
 // lib/screens/customer_payment_screen.dart
 //
-// UPDATED: WhatsApp functionality removed from customer view.
-// -----------------------------------------------------------------------------
-// Everything else (BillCard per bill, UPI pay + QR section, live order tracking,
-// and the 48-hour rule info box) remains intact and fully functional.
+// UPDATED: Billing reflects ONLY orders whose delivery status is
+// 'Completed' (i.e. the delivery boy has captured proof and marked the
+// order delivered). Orders that are placed but not yet delivered are shown
+// in a separate "Awaiting Delivery" card and are NOT counted in any bill.
+// Cancelled orders (every product unavailable) are excluded from BOTH the
+// bill and the "Awaiting Delivery" list entirely. Individual cancelled
+// products inside a delivered order are excluded from that order's total
+// automatically by BillingService.orderTotal() and are shown in BillCard.
+//
+// REMOVED: The "Live Order Tracking" countdown card (and the running-cycle
+// computation that only fed it) has been removed from this screen. All
+// other billing behavior is unchanged.
 // =============================================================================
 
 import 'dart:async';
@@ -38,13 +46,26 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
   static const String adminUpiId = '9850921154@paytm';
   static const String adminName = 'Viraj Dairy Admin';
 
+  static const Set<String> _deliveredStatuses = {'Completed', 'Delivered'};
+
+  bool _isOrderDelivered(Map<String, dynamic> order) {
+    final status = order['status']?.toString() ?? '';
+    return _deliveredStatuses.contains(status);
+  }
+
+  bool _isOrderCancelled(Map<String, dynamic> order) {
+    final status = order['status']?.toString() ?? '';
+    return status == 'Cancelled';
+  }
+
   @override
   void initState() {
     super.initState();
 
-    // Only re-renders the countdown text every second — never touches or
-    // recomputes billing cycles itself, so it can't cause any drift. The
-    // actual data still comes live from the Firestore streams below.
+    // Periodic re-render kept for the BillCard countdown (the bill window
+    // unlock timer inside BillCard still ticks independently). This screen
+    // no longer has its own countdown text, but BillCard benefits from the
+    // parent rebuilding periodically so its unlock state stays fresh.
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -57,7 +78,7 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
   }
 
   // ===========================================================================
-  // UPI HELPERS (customer-side payment, kept separate from BillCard)
+  // UPI HELPERS
   // ===========================================================================
 
   String _getUpiUri(Map<String, dynamic> cycle) {
@@ -100,9 +121,6 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
         return;
       }
 
-      // IMPORTANT: opening the UPI app does not mean payment succeeded.
-      // paymentStatus only becomes "Paid" once your backend/admin confirms
-      // it in Firestore — this screen never marks it Paid on its own.
       _showMessage(
         'UPI opened. After successful payment, an admin must confirm it before this bill shows Paid.',
       );
@@ -141,11 +159,7 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
                 children: [
                   Text(
                     widget.customer['name']?.toString() ?? 'Customer',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1E293B),
-                    ),
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -162,21 +176,14 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
   }
 
   // ===========================================================================
-  // LIVE "CURRENT ORDER TRACKING" CARD
+  // AWAITING DELIVERY CARD
+  //
+  // Orders placed but not yet delivered AND not cancelled. Excluded from
+  // every billing cycle until delivery is confirmed.
   // ===========================================================================
 
-  Widget _buildLiveOrderTrackingCard(List<Map<String, dynamic>> runningOrders) {
-    if (runningOrders.isEmpty) return const SizedBox.shrink();
-
-    String liveCountdown(Map<String, dynamic> order) {
-      final remaining = BillingService.getRemainingTime(order);
-      if (remaining == Duration.zero) return 'Unlocking...';
-
-      final h = remaining.inHours;
-      final m = remaining.inMinutes % 60;
-      final s = remaining.inSeconds % 60;
-      return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-    }
+  Widget _buildAwaitingDeliveryCard(List<Map<String, dynamic>> pendingOrders) {
+    if (pendingOrders.isEmpty) return const SizedBox.shrink();
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -184,48 +191,53 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
         width: double.infinity,
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: const Color(0xFFFFFBEB),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFBFDBFE)),
+          border: Border.all(color: const Color(0xFFFDE68A)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: const BoxDecoration(color: Colors.green, shape: BoxShape.circle),
-                ),
+                const Icon(Icons.local_shipping_outlined, size: 17, color: Color(0xFF92400E)),
                 const SizedBox(width: 8),
-                const Text(
-                  'Live Order Tracking',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A)),
+                const Expanded(
+                  child: Text(
+                    'Awaiting Delivery',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF92400E)),
+                  ),
                 ),
-                const Spacer(),
                 Text(
-                  '${runningOrders.length} in current bill',
-                  style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                  '${pendingOrders.length} order${pendingOrders.length == 1 ? '' : 's'}',
+                  style: const TextStyle(fontSize: 11, color: Color(0xFF92400E)),
                 ),
               ],
             ),
+            const SizedBox(height: 6),
+            const Text(
+              'These orders are placed but not yet delivered. They will be added to '
+              'your bill only once the delivery is completed.',
+              style: TextStyle(fontSize: 11, height: 1.4, color: Color(0xFF92400E)),
+            ),
             const SizedBox(height: 10),
-            ...runningOrders.map((order) {
+            ...pendingOrders.map((order) {
               final orderId = order['id']?.toString() ?? '';
               final placedAt = BillingService.getOrderCreatedAt(order);
               final amt = BillingService.orderTotal(order);
+              final status = order['status']?.toString() ?? 'Pending';
 
               return Container(
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: Colors.white,
                   borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFFDE68A)),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.hourglass_top, size: 16, color: Color(0xFF1E3A8A)),
+                    const Icon(Icons.pending_actions, size: 16, color: Color(0xFF92400E)),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Column(
@@ -244,12 +256,8 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
                       children: [
                         Text('₹${amt.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
                         Text(
-                          liveCountdown(order),
-                          style: const TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF1E3A8A),
-                          ),
+                          status,
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF92400E)),
                         ),
                       ],
                     ),
@@ -288,10 +296,6 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
             if (mounted) setState(() {});
           },
         ),
-
-        // -----------------------------------------------------------------
-        // UPI PAY BUTTON + QR — only while unlocked and unpaid.
-        // -----------------------------------------------------------------
         if (isUnlocked && !isPaid) ...[
           Padding(
             padding: const EdgeInsets.only(bottom: 16, top: 4),
@@ -315,28 +319,19 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
                         backgroundColor: const Color(0xFF1E3A8A),
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
                     ),
                   ),
                   const SizedBox(height: 14),
                   Text(
                     'Scan QR to Pay Bill #${cycle['billNumber']}',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1E3A8A),
-                    ),
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A)),
                   ),
                   const SizedBox(height: 10),
                   QrImageView(data: _getUpiUri(cycle), version: QrVersions.auto, size: 160),
                   const SizedBox(height: 6),
-                  Text(
-                    'UPI ID: $adminUpiId',
-                    style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-                  ),
+                  Text('UPI ID: $adminUpiId', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
                 ],
               ),
             ),
@@ -347,10 +342,7 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF0FDF4),
-                borderRadius: BorderRadius.circular(8),
-              ),
+              decoration: BoxDecoration(color: const Color(0xFFF0FDF4), borderRadius: BorderRadius.circular(8)),
               child: const Row(
                 children: [
                   Icon(Icons.check_circle, size: 17, color: Colors.green),
@@ -383,10 +375,7 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E3A8A),
         foregroundColor: Colors.white,
-        title: const Text(
-          'My Bills & Payments',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-        ),
+        title: const Text('My Bills & Payments', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
         actions: const [
           Padding(
             padding: EdgeInsets.only(right: 14),
@@ -409,17 +398,22 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final orders = orderSnap.data ?? [];
-          final cycles = BillingService.buildCustomerCycles(orders).reversed.toList();
+          final allOrders = orderSnap.data ?? [];
 
-          final runningCycle = cycles.firstWhere(
-            (c) => c['isUnlocked'] != true,
-            orElse: () => const {},
-          );
+          // -----------------------------------------------------------------
+          // SPLIT ORDERS:
+          //  - billableOrders: delivered -> counted in billing cycles.
+          //  - pendingOrders: not yet delivered AND not cancelled -> shown
+          //    in "Awaiting Delivery", excluded from all bills.
+          //  - Cancelled orders appear in neither list.
+          // -----------------------------------------------------------------
 
-          final runningOrders = runningCycle.isEmpty
-              ? <Map<String, dynamic>>[]
-              : List<Map<String, dynamic>>.from(runningCycle['orders'] ?? []);
+          final billableOrders = allOrders.where(_isOrderDelivered).toList();
+          final pendingOrders = allOrders
+              .where((o) => !_isOrderDelivered(o) && !_isOrderCancelled(o))
+              .toList();
+
+          final cycles = BillingService.buildCustomerCycles(billableOrders).reversed.toList();
 
           return StreamBuilder<List<Map<String, dynamic>>>(
             stream: _db.streamGeneratedBillsForCustomer(mobile),
@@ -443,7 +437,7 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
                     children: [
                       _buildCustomerCard(),
                       const SizedBox(height: 18),
-                      _buildLiveOrderTrackingCard(runningOrders),
+                      _buildAwaitingDeliveryCard(pendingOrders),
                       Container(
                         width: double.infinity,
                         padding: const EdgeInsets.all(14),
@@ -463,18 +457,18 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
                                 children: [
                                   Text(
                                     '48-Hour Billing Rule',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.bold,
-                                      color: Color(0xFF1E3A8A),
-                                    ),
+                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A)),
                                   ),
                                   SizedBox(height: 4),
                                   Text(
-                                    'Each bill starts the moment an order is placed and covers exactly the '
-                                    'next 48 hours. Any order placed inside that window joins the same bill. '
-                                    'Once the window closes, the next order automatically starts a brand new bill — '
-                                    'even if that is days or months later.',
+                                    'Each bill starts the moment a DELIVERED order first joins an open '
+                                    'cycle and covers exactly the next 48 hours. Any order delivered inside '
+                                    'that window joins the same bill. Once the window closes, the next '
+                                    'delivered order automatically starts a brand new bill — even if that '
+                                    'is days or months later. Orders that are placed but not yet delivered, '
+                                    'and orders cancelled by delivery, never affect any bill. Individual '
+                                    'products marked unavailable inside a delivered order are also excluded '
+                                    'from that order\'s amount.',
                                     style: TextStyle(fontSize: 11, height: 1.4, color: Color(0xFF1E3A8A)),
                                   ),
                                 ],
@@ -498,7 +492,7 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
                         ],
                       ),
                       const SizedBox(height: 12),
-                      if (orders.isEmpty)
+                      if (allOrders.isEmpty)
                         Card(
                           child: Padding(
                             padding: const EdgeInsets.all(30),
@@ -508,6 +502,25 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
                                   Icon(Icons.receipt_long, size: 50, color: Colors.grey.shade400),
                                   const SizedBox(height: 10),
                                   const Text('No orders found.', style: TextStyle(fontSize: 15, color: Color(0xFF64748B))),
+                                ],
+                              ),
+                            ),
+                          ),
+                        )
+                      else if (billableOrders.isEmpty)
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(30),
+                            child: Center(
+                              child: Column(
+                                children: [
+                                  Icon(Icons.local_shipping_outlined, size: 50, color: Colors.grey.shade400),
+                                  const SizedBox(height: 10),
+                                  const Text(
+                                    'No bills yet — your orders will appear here once delivered.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(fontSize: 14, color: Color(0xFF64748B)),
+                                  ),
                                 ],
                               ),
                             ),

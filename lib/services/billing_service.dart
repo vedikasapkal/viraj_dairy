@@ -9,32 +9,20 @@
 // 3. This service NEVER auto-changes an unpaid order to "Pending".
 //
 // =============================================================================
-// FIX (this version) — THE "AUTO SPLIT / JUMPS TO NEXT DATE" BUG
+// PER-PRODUCT AVAILABILITY (NEW)
 // -----------------------------------------------------------------------------
-// The OLD buildCustomerCycles() anchored every cycle to the customer's very
-// FIRST order ever, then chopped time into fixed 48-hour slots counted
-// forward from that anchor FOREVER (slot = elapsedTime ~/ 48h). That meant:
-//   - If a customer went quiet for a while and then placed one more order,
-//     it could land in slot #6 or #7 purely because of the calendar gap,
-//     even though only 2 orders exist. The UI then shows "Bill #7" out of
-//     nowhere — this LOOKS like the app auto-created/auto-moved bills, but
-//     it never touched your data. It was a numbering artifact.
-//   - Worse: `customer_payment_screen.dart` had its OWN SEPARATE copy of
-//     this logic (`_createBillingCycles`) that used a DIFFERENT algorithm
-//     (sequential, restarting after each cycle matures). So the admin
-//     screen and the customer screen could show different bill boundaries
-//     for the exact same orders.
+// Each item inside order['items'] now carries an 'itemStatus' field:
+//   'pending'   -> not yet handled by delivery (default)
+//   'delivered' -> delivery marked it available / delivered
+//   'cancelled' -> delivery marked it not available; EXCLUDED from billing
+// orderTotal() automatically skips cancelled items so the customer is never
+// charged for a product that wasn't actually delivered.
+// =============================================================================
 //
-// THE FIX: one single algorithm, used everywhere (admin + customer):
-//   - The first not-yet-billed order opens a cycle.
-//   - The cycle is EXACTLY 48 real calendar hours from that order's
-//     timestamp.
-//   - Every order that arrives before the cycle matures joins that cycle.
-//   - The next order placed AFTER maturity opens the next cycle.
-//   - Cycles are never re-opened or re-numbered later — bill #1 stays
-//     bill #1 forever once orders are assigned to it.
-// This is deterministic from the stored order timestamps alone, so simply
-// reopening the app / rebuilding the widget can never change past bills.
+// FIX (previous version) — THE "AUTO SPLIT / JUMPS TO NEXT DATE" BUG
+// -----------------------------------------------------------------------------
+// See buildCustomerCycles() below for the single source of truth for
+// billing-cycle boundaries — both admin and customer screens must use it.
 // =============================================================================
 
 import 'dart:typed_data';
@@ -234,6 +222,30 @@ class BillingService {
   }
 
   // ===========================================================================
+  // PER-PRODUCT (ITEM) AVAILABILITY HELPERS  (NEW)
+  // ===========================================================================
+
+  /// True when a single item inside an order's `items` list has been marked
+  /// unavailable by delivery ('cancelled' / legacy 'not_available'). Items
+  /// with no itemStatus, or itemStatus 'pending'/'delivered', are NOT
+  /// cancelled and continue to count toward the bill as before.
+  static bool isItemCancelled(Map item) {
+    final status = item['itemStatus']?.toString().toLowerCase() ?? '';
+    return status == 'cancelled' || status == 'not_available';
+  }
+
+  /// True only when an order has at least one item and every single item in
+  /// it has been marked cancelled — i.e. nothing in the order is deliverable.
+  static bool orderHasOnlyCancelledItems(Map<String, dynamic> order) {
+    final items = (order['items'] as List?) ?? [];
+    if (items.isEmpty) return false;
+    return items.every((raw) {
+      final item = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+      return isItemCancelled(item);
+    });
+  }
+
+  // ===========================================================================
   // MONEY & UPI PARSING
   // ===========================================================================
 
@@ -283,6 +295,10 @@ class BillingService {
 
   // ===========================================================================
   // ORDER TOTAL
+  //
+  // UPDATED: items marked cancelled/not-available by delivery are excluded
+  // from the total entirely — the customer is never billed for a product
+  // that wasn't actually delivered.
   // ===========================================================================
 
   static double orderTotal(Map<String, dynamic> order) {
@@ -304,6 +320,12 @@ class BillingService {
       if (rawItem is! Map) continue;
       final item = Map<String, dynamic>.from(rawItem);
 
+      // ---------------------------------------------------------------------
+      // Skip items delivery marked "Not Available / Cancelled" — they never
+      // contribute to the bill.
+      // ---------------------------------------------------------------------
+      if (isItemCancelled(item)) continue;
+
       final qty = parseAmount(
         item['qty'] ?? item['quantity'] ?? item['count'] ?? 1,
       );
@@ -320,6 +342,11 @@ class BillingService {
     }
 
     if (sum == 0) {
+      // If EVERY item was cancelled, sum is legitimately 0 — do NOT fall
+      // back to totalAmount, or a fully-cancelled order would wrongly
+      // re-bill the customer for the original placed amount.
+      if (orderHasOnlyCancelledItems(order)) return 0.0;
+
       final fallbackTotal = order['totalAmount'] ??
           order['total'] ??
           order['grandTotal'] ??
@@ -655,6 +682,13 @@ class BillingService {
               final orderId = order['id']?.toString() ?? '';
               final orderDate = getOrderCreatedAt(order);
               final items = (order['items'] as List?) ?? [];
+              // Only render items that were actually billed (not cancelled)
+              // so the printed bill matches the total exactly.
+              final billableItems = items.where((rawItem) {
+                if (rawItem is! Map) return true;
+                final item = Map<String, dynamic>.from(rawItem);
+                return !isItemCancelled(item);
+              }).toList();
               final thisOrderTotal = orderTotal(order);
               final deliveryPhoto = loadedImages[orderId];
 
@@ -683,7 +717,7 @@ class BillingService {
                       ],
                     ),
                     pw.SizedBox(height: 8),
-                    if (items.isNotEmpty)
+                    if (billableItems.isNotEmpty)
                       pw.TableHelper.fromTextArray(
                         headers: const ['Product', 'Qty', 'Price', 'Total'],
                         headerStyle: pw.TextStyle(
@@ -694,7 +728,7 @@ class BillingService {
                         headerDecoration:
                             const pw.BoxDecoration(color: PdfColors.blue900),
                         cellStyle: const pw.TextStyle(fontSize: 9),
-                        data: items.map((rawItem) {
+                        data: billableItems.map((rawItem) {
                           final item = rawItem is Map
                               ? Map<String, dynamic>.from(rawItem)
                               : <String, dynamic>{};
