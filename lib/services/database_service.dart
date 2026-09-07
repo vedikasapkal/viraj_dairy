@@ -733,3 +733,23 @@ class DatabaseService {
     });
   }
 }
+
+Future<void> flagPaymentForReview({
+  required String cycleId,
+  required String customerMobile,
+  String? customerName,
+  required String billNumber,
+  required double totalAmount,
+  required String note,
+}) async {
+  await FirebaseFirestore.instance.collection('paymentReviews').add({
+    'cycleId': cycleId,
+    'customerMobile': customerMobile,
+    'customerName': customerName,
+    'billNumber': billNumber,
+    'totalAmount': totalAmount,
+    'note': note,
+    'status': 'pending_review',
+    'createdAt': FieldValue.serverTimestamp(),
+  });
+}
