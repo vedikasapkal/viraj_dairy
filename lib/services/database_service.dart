@@ -11,6 +11,18 @@
 //   Not Available.
 // - New methods: updateOrderItemStatus() and cancelEntireOrder() to support
 //   the delivery dashboard's per-product controls.
+//
+// NEW IN THIS VERSION (UPI auto-confirmation support):
+// - markCycleOrdersPaid()      -> flips every order in a billing cycle to
+//                                 paymentStatus 'Paid' in one batch write,
+//                                 called automatically once the UPI plugin
+//                                 reports a successful transaction.
+// - markGeneratedBillPaid()    -> flips the matching generated_bills doc to
+//                                 'Paid' too, so admin + customer screens
+//                                 (which both read generated_bills) agree.
+// - markCycleOrdersUnpaid() / markGeneratedBillUnpaid() -> admin-only undo,
+//   used by the "Mark Unpaid" fallback button in case a payment needs to be
+//   reversed (wrong amount confirmed, disputed transaction, etc).
 // =============================================================================
 
 import 'dart:convert';
@@ -510,6 +522,56 @@ class DatabaseService {
   }
 
   // ------------------------------------------------------
+  // NEW: MARK AN ENTIRE BILLING CYCLE PAID / UNPAID
+  //
+  // markCycleOrdersPaid() is called automatically by the customer payment
+  // screen once the UPI plugin reports a successful transaction (see
+  // customer_payment_screen.dart -> _handleUpiResponse()). It flips every
+  // order that belongs to that cycle to paymentStatus 'Paid' in a single
+  // batch write, and records the UPI transaction id as paymentId so it can
+  // be traced later if a customer disputes the charge.
+  //
+  // markCycleOrdersUnpaid() exists purely as an admin-side undo (wrong
+  // amount confirmed, disputed/refunded transaction, etc). It is NOT called
+  // anywhere automatically.
+  // ------------------------------------------------------
+
+  Future<void> markCycleOrdersPaid({
+    required List<Map<String, dynamic>> cycleOrders,
+    required String paymentId,
+  }) async {
+    final orderIds = cycleOrders
+        .map((o) => o['id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toList();
+
+    if (orderIds.isEmpty) return;
+
+    await updateBatchPaymentStatus(
+      orderIds: orderIds,
+      paymentStatus: 'Paid',
+      paymentId: paymentId,
+    );
+  }
+
+  Future<void> markCycleOrdersUnpaid({
+    required List<Map<String, dynamic>> cycleOrders,
+  }) async {
+    final orderIds = cycleOrders
+        .map((o) => o['id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toList();
+
+    if (orderIds.isEmpty) return;
+
+    await updateBatchPaymentStatus(
+      orderIds: orderIds,
+      paymentStatus: 'Pending',
+      paymentId: null,
+    );
+  }
+
+  // ------------------------------------------------------
   // DELETE ORDERS (always call these AFTER the caller has shown a
   // confirmation warning dialog, never silently.)
   // ------------------------------------------------------
@@ -608,6 +670,66 @@ class DatabaseService {
     await _generatedBills.doc(billDocId).update({
       'whatsappSent': true,
       'whatsappSentAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  // ------------------------------------------------------
+  // NEW: MARK / UNMARK A GENERATED BILL PAID
+  //
+  // markGeneratedBillPaid() is called right alongside markCycleOrdersPaid()
+  // so the generated_bills doc (which the admin dashboard's bill cards read
+  // via billDoc['paymentStatus'] is intentionally NOT used for that today —
+  // the cards actually read cycle['paymentStatus'], which BillingService
+  // derives from the underlying orders) stays consistent for any other
+  // screen that reads generated_bills directly, and so the paymentId /
+  // paidAt audit trail lives in one place.
+  //
+  // If no generated_bills doc exists yet for this cycle (e.g. the customer
+  // paid before an admin ever generated/opened that bill), one is created
+  // here so the "Paid" state and paymentId aren't lost.
+  // ------------------------------------------------------
+
+  Future<void> markGeneratedBillPaid({
+    required String cycleId,
+    required String customerMobile,
+    required String paymentId,
+    String? customerName,
+    int? billNumber,
+    double? totalAmount,
+  }) async {
+    final existing = await getGeneratedBillByCycleId(cycleId);
+
+    if (existing != null) {
+      await _generatedBills.doc(existing['id']).update({
+        'paymentStatus': 'Paid',
+        'paymentId': paymentId,
+        'paidAt': FieldValue.serverTimestamp(),
+      });
+    } else {
+      final newId = cycleId.isNotEmpty ? cycleId : 'bill_${DateTime.now().millisecondsSinceEpoch}';
+      await _generatedBills.doc(newId).set({
+        'id': newId,
+        'cycleId': cycleId,
+        'customerMobile': customerMobile,
+        'customerName': customerName ?? 'Customer',
+        'billNumber': billNumber,
+        'totalAmount': totalAmount,
+        'paymentStatus': 'Paid',
+        'paymentId': paymentId,
+        'paidAt': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
+  Future<void> markGeneratedBillUnpaid({required String cycleId}) async {
+    final existing = await getGeneratedBillByCycleId(cycleId);
+    if (existing == null) return;
+
+    await _generatedBills.doc(existing['id']).update({
+      'paymentStatus': 'Pending',
+      'paymentId': null,
+      'paidAt': null,
     });
   }
 }
