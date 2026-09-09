@@ -9,6 +9,28 @@
 // 4. A bill is marked Paid only after the UPI app returns SUCCESS.
 // 5. The same transaction cannot be submitted twice while it is in progress.
 // 6. After SUCCESS, both the cycle orders and generated bill are updated.
+//
+// ⚠️ READ THIS BEFORE DEBUGGING "payment failed" REPORTS ⚠️
+// -----------------------------------------------------------------------------
+// If BOTH the in-app "Pay via UPI" button AND scanning the QR code with an
+// external UPI app fail with the same error (e.g. "the feature you're trying
+// to use isn't supported by the receiver's payment provider"), this is NOT a
+// bug in this file. Scanning a QR code never touches this app's code at all
+// — the external UPI app decodes the string and talks directly to the
+// receiver's bank/PSP. If both paths fail identically, the problem is the
+// receiving UPI ID (`adminUpiId` below), not the Flutter/Dart logic.
+//
+// `9850921154@paytm`-style numeric Paytm VPAs are often personal /
+// wallet-linked handles that cannot reliably accept UPI "Pay" intents or
+// collect requests from other apps. Before assuming there is a code bug:
+//   1. Manually type the UPI ID into GPay/PhonePe and try sending ₹1.
+//   2. If that also fails, the VPA itself needs to be fixed/replaced with a
+//      proper bank-linked handle (e.g. name@oksbi, name@okaxis, name@ybl) or
+//      an activated Paytm merchant ID — get this from the receiving party's
+//      bank/Paytm UPI settings, not from a mobile number alone.
+// This file now surfaces that distinction directly to the user (see
+// _handleUpiResponse -> FAILURE / default cases) instead of showing a
+// generic "payment failed" message.
 // =============================================================================
 
 import 'dart:async';
@@ -43,9 +65,20 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
 
   Timer? _refreshTimer;
 
+  // ---------------------------------------------------------------------
+  // SINGLE SOURCE OF TRUTH FOR THE RECEIVING UPI ID
+  // ---------------------------------------------------------------------
   // IMPORTANT:
-  // This must be the REAL receiving UPI ID belonging to the dairy.
-  // Do not use a personal/request-money UPI ID for production payments.
+  // This MUST be the REAL, ACTIVE, bank-linked receiving UPI ID belonging
+  // to the dairy. A numeric mobile-number Paytm VPA (like the previous
+  // "9850921154@paytm") is frequently NOT usable for third-party "Pay"
+  // intents or QR-based collect and will fail with errors such as:
+  //   "the feature you're trying to use isn't supported by the receiver's
+  //    payment provider"
+  // even though nothing is wrong with the app itself.
+  //
+  // Verify this value by manually paying ₹1 to it from GPay/PhonePe BEFORE
+  // reporting a code bug. Replace with a confirmed-working VPA below.
   static const String adminUpiId = '9850921154@paytm';
 
   // Keep this name identical to the verified name shown by the receiving
@@ -60,6 +93,22 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
   String? _busyCycleId;
 
   bool get _androidUpiFlowSupported => !kIsWeb && Platform.isAndroid;
+
+  /// Heuristic only — used to add an extra hint to the failure message when
+  /// the configured VPA "looks like" a personal numeric Paytm handle that is
+  /// commonly the cause of "feature not supported" style failures. This is
+  /// NOT a guarantee the VPA is broken, and NOT a guarantee it's fine if
+  /// this returns false — it only improves the message shown to people.
+  bool get _adminVpaLooksRisky {
+    final vpa = adminUpiId.toLowerCase();
+    final atIndex = vpa.indexOf('@');
+    if (atIndex <= 0) return true; // malformed VPA entirely
+    final localPart = vpa.substring(0, atIndex);
+    final handle = vpa.substring(atIndex + 1);
+    final isAllDigits = RegExp(r'^\d{6,}$').hasMatch(localPart);
+    final isPaytmHandle = handle == 'paytm';
+    return isAllDigits && isPaytmHandle;
+  }
 
   // ---------------------------------------------------------------------------
   // ORDER HELPERS
@@ -248,9 +297,12 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
       );
     } on UpiIndiaInvalidParametersException {
       _showMessage(
-        'The UPI app rejected the payment request. '
-        'Please verify the dairy UPI ID and try again.',
+        'The UPI app rejected the payment request. This usually means the '
+        'receiving UPI ID ($adminUpiId) is invalid, inactive, or cannot '
+        'accept this type of request. Please verify the dairy\'s UPI ID '
+        'directly in a UPI app before trying again.',
         error: true,
+        duration: const Duration(seconds: 7),
       );
     } on UpiIndiaActivityMissingException {
       _showMessage(
@@ -399,7 +451,8 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
         : _transactionRefId(cycle);
 
     debugPrint(
-      'UPI result: app=$appName status=$status transactionId=$transactionId',
+      'UPI result: app=$appName status=$status transactionId=$transactionId '
+      'responseCode=${response.responseCode} approvalRef=${response.approvalRefNo}',
     );
 
     switch (status) {
@@ -422,9 +475,9 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
 
       case 'FAILURE':
         _showMessage(
-          'Payment failed or was cancelled in $appName. '
-          'Bill #${cycle['billNumber']} is still Pending.',
+          _buildFailureMessage(cycle, appName),
           error: true,
+          duration: const Duration(seconds: 8),
         );
         break;
 
@@ -432,11 +485,32 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
         // Unknown/empty response must remain unpaid.
         _showMessage(
           'UPI returned an unknown payment status. '
-          'Bill #${cycle['billNumber']} is still Pending.',
+          'Bill #${cycle['billNumber']} is still Pending. '
+          'If this keeps happening on both direct pay and QR scan, the '
+          'receiving UPI ID likely needs to be verified/replaced.',
           error: true,
+          duration: const Duration(seconds: 8),
         );
         break;
     }
+  }
+
+  /// Builds a failure message. When the configured VPA "looks risky" (see
+  /// _adminVpaLooksRisky), adds a targeted hint instead of a generic
+  /// "payment failed" line, since that is the far more common real cause
+  /// for repeated failures across both the in-app button AND QR scans.
+  String _buildFailureMessage(Map<String, dynamic> cycle, String appName) {
+    final base = 'Payment failed or was cancelled in $appName. '
+        'Bill #${cycle['billNumber']} is still Pending.';
+
+    if (_adminVpaLooksRisky) {
+      return '$base\n\nThis UPI ID often can\'t accept payments from other '
+          'apps. Please ask the dairy to verify or replace their UPI ID '
+          '(a bank-linked ID such as name@oksbi/@okaxis/@ybl works best) '
+          'and try again.';
+    }
+
+    return base;
   }
 
   Future<void> _completeSuccessfulPayment({
@@ -655,7 +729,10 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
             'from this link because the app cannot safely read the final '
             'bank result.\n\n'
             'If your app reports a failed/risk-policy payment, the bill '
-            'will remain Pending.',
+            'will remain Pending. If the failure mentions the receiver\'s '
+            'payment provider not supporting a feature, the dairy\'s UPI '
+            'ID needs to be verified or replaced — this is not something '
+            'this app can fix automatically.',
           ),
           actions: [
             TextButton(
@@ -1071,6 +1148,31 @@ class _CustomerPaymentScreenState extends State<CustomerPaymentScreen> {
                         color: Color(0xFF64748B),
                       ),
                     ),
+                    if (_adminVpaLooksRisky) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF2F2),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: const Color(0xFFFECACA),
+                          ),
+                        ),
+                        child: const Text(
+                          'If payments to this UPI ID keep failing, it may '
+                          'need to be verified or replaced by the dairy — '
+                          'this can happen with certain UPI ID types and is '
+                          'not an app error.',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            height: 1.3,
+                            color: Color(0xFF991B1B),
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
